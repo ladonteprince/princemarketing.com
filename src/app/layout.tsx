@@ -16,12 +16,22 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://princemarketing.com"),
   title: {
     default: "PrinceMarketing - Your marketing, handled.",
     template: "%s | PrinceMarketing",
   },
   description:
-    "AI-powered marketing platform for solo business owners. Strategy, content, and scheduling — all handled for you.",
+    "AI-powered marketing platform for solo business owners.",
+  openGraph: {
+    type: "website",
+    url: "https://princemarketing.com",
+    siteName: "PrinceMarketing",
+    title: "PrinceMarketing - Your marketing, handled.",
+    description: "AI-powered marketing platform for solo business owners.",
+  },
+  twitter: { card: "summary_large_image" },
+  robots: { index: true, follow: true },
   icons: {
     icon: "/favicon.svg",
     apple: "/favicon.svg",

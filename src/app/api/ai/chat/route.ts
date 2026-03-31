@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { claude, STRATEGIST_SYSTEM_PROMPT } from "@/lib/claude";
+import { checkRateLimit } from "@/lib/rate-limiter";
 import { z } from "zod";
 
 const chatRequestSchema = z.object({
@@ -9,6 +11,22 @@ const chatRequestSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    // 0. Auth check
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // 0b. Rate limit
+    const email = session.user.email ?? session.user.id ?? "unknown";
+    const { allowed, remaining } = checkRateLimit(`chat:${email}`, 20);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded. Try again in a minute." },
+        { status: 429, headers: { "X-RateLimit-Remaining": String(remaining) } },
+      );
+    }
+
     // 1. Parse request
     const body = await request.json();
     const parsed = chatRequestSchema.safeParse(body);

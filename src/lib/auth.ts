@@ -37,15 +37,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return null;
         }
 
-        // Compare with bcrypt. Fallback: if passwordHash is not a bcrypt hash
-        // (legacy plain-text from initial build), do direct comparison.
-        let passwordValid = false;
-        if (user.passwordHash.startsWith("$2")) {
-          passwordValid = await bcrypt.compare(password, user.passwordHash);
-        } else {
-          // Legacy plain-text passwords from initial build
-          passwordValid = user.passwordHash === password;
-        }
+        // Compare with bcrypt only — no plain-text fallback
+        const passwordValid = await bcrypt.compare(password, user.passwordHash);
 
         if (!passwordValid) {
           return null;

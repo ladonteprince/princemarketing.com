@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut } from "next-auth/react";
 import {
   LayoutDashboard,
   Calendar,
@@ -159,6 +160,7 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
           {/* Logout */}
           <li>
             <button
+              onClick={() => signOut({ callbackUrl: "/" })}
               className={`
                 flex w-full items-center gap-3 rounded-lg px-3 py-2.5
                 text-sm font-medium text-ash

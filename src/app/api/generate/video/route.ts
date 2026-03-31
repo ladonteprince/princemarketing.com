@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { checkRateLimit } from "@/lib/rate-limiter";
 import { princeAPI } from "@/lib/api-client";
 import { z } from "zod";
 
@@ -17,6 +18,15 @@ export async function POST(request: Request) {
     const session = await auth();
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const email = session.user.email ?? session.user.id ?? "unknown";
+    const { allowed, remaining } = checkRateLimit(`video:${email}`, 20);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded. Try again in a minute." },
+        { status: 429, headers: { "X-RateLimit-Remaining": String(remaining) } },
+      );
     }
 
     const body = await request.json();

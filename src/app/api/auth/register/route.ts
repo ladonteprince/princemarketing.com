@@ -28,13 +28,12 @@ export async function POST(request: Request) {
       );
     }
 
-    // 3. Create user
-    // WHY: In production, hash password with bcrypt before storing
-    // TODO: Replace with bcrypt.hash(password, 12)
+    // 3. Create user with bcrypt-hashed password
+    const passwordHash = await bcrypt.hash(password, 12);
     const user = await db.user.create({
       data: {
         email,
-        passwordHash: password,
+        passwordHash,
         name,
       },
     });
