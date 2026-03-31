@@ -1,3 +1,8 @@
+"use client";
+
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import Link from "next/link";
 import { Check } from "lucide-react";
 
@@ -14,6 +19,7 @@ type Plan = {
   features: ReadonlyArray<PlanFeature>;
   highlighted: boolean;
   cta: string;
+  planKey: string;
 };
 
 const PLANS: ReadonlyArray<Plan> = [
@@ -33,6 +39,7 @@ const PLANS: ReadonlyArray<Plan> = [
     ],
     highlighted: false,
     cta: "Get started",
+    planKey: "STARTER",
   },
   {
     name: "Growth",
@@ -50,6 +57,7 @@ const PLANS: ReadonlyArray<Plan> = [
     ],
     highlighted: true,
     cta: "Start growing",
+    planKey: "GROWTH",
   },
   {
     name: "Scale",
@@ -67,10 +75,45 @@ const PLANS: ReadonlyArray<Plan> = [
     ],
     highlighted: false,
     cta: "Scale now",
+    planKey: "SCALE",
   },
 ] as const;
 
 export function Pricing() {
+  const { data: session } = useSession();
+  const router = useRouter();
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+
+  async function handleCheckout(planKey: string) {
+    // If not signed in, redirect to register
+    if (!session?.user) {
+      router.push("/register");
+      return;
+    }
+
+    setLoadingPlan(planKey);
+
+    try {
+      const response = await fetch("/api/stripe/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: planKey }),
+      });
+
+      const data = await response.json();
+
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        console.error("No checkout URL returned:", data.error);
+      }
+    } catch (error) {
+      console.error("Checkout failed:", error);
+    } finally {
+      setLoadingPlan(null);
+    }
+  }
+
   return (
     <section id="pricing" className="border-t border-smoke px-6 py-24">
       <div className="mx-auto max-w-5xl">
@@ -137,11 +180,12 @@ export function Pricing() {
                 ))}
               </ul>
 
-              <Link
-                href="/register"
+              <button
+                onClick={() => handleCheckout(plan.planKey)}
+                disabled={loadingPlan === plan.planKey}
                 className={`
                   flex h-11 items-center justify-center rounded-lg text-sm font-medium
-                  transition-colors duration-[var(--transition-micro)]
+                  transition-colors duration-[var(--transition-micro)] disabled:opacity-60
                   ${
                     plan.highlighted
                       ? "bg-royal text-white hover:bg-royal-hover"
@@ -149,8 +193,8 @@ export function Pricing() {
                   }
                 `}
               >
-                {plan.cta}
-              </Link>
+                {loadingPlan === plan.planKey ? "Redirecting..." : plan.cta}
+              </button>
             </div>
           ))}
         </div>

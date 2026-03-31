@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { signIn } from "next-auth/react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import type { LoginInput } from "@/types/user";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [form, setForm] = useState<LoginInput>({ email: "", password: "" });
   const [errors, setErrors] = useState<Partial<Record<keyof LoginInput, string>>>({});
   const [loading, setLoading] = useState(false);
@@ -14,7 +17,6 @@ export default function LoginPage() {
 
   function updateField(field: keyof LoginInput, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
-    // Clear error on change
     if (errors[field]) {
       setErrors((prev) => ({ ...prev, [field]: undefined }));
     }
@@ -33,23 +35,23 @@ export default function LoginPage() {
       return;
     }
 
-    // 2. Submit
+    // 2. Sign in via NextAuth
     setLoading(true);
     try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+      const result = await signIn("credentials", {
+        email: form.email,
+        password: form.password,
+        redirect: false,
       });
 
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        setServerError((body as { error?: string }).error ?? "Login failed");
+      if (result?.error) {
+        setServerError("Invalid email or password");
         return;
       }
 
       // 3. Redirect to dashboard
-      window.location.href = "/";
+      router.push("/dashboard");
+      router.refresh();
     } catch {
       setServerError("Something went wrong. Try again.");
     } finally {

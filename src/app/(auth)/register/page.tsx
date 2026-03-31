@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { signIn } from "next-auth/react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import type { RegisterInput } from "@/types/user";
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [form, setForm] = useState<RegisterInput>({
     email: "",
     password: "",
@@ -41,7 +44,7 @@ export default function RegisterPage() {
       return;
     }
 
-    // 2. Submit
+    // 2. Submit to register API
     setLoading(true);
     try {
       const response = await fetch("/api/auth/register", {
@@ -58,8 +61,21 @@ export default function RegisterPage() {
         return;
       }
 
-      // 3. Redirect to dashboard for onboarding
-      window.location.href = "/chat";
+      // 3. Auto sign-in after registration via NextAuth
+      const result = await signIn("credentials", {
+        email: form.email,
+        password: form.password,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        // Registration succeeded but auto-login failed, redirect to login
+        router.push("/login");
+        return;
+      }
+
+      router.push("/dashboard");
+      router.refresh();
     } catch {
       setServerError("Something went wrong. Try again.");
     } finally {
