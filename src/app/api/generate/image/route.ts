@@ -1,0 +1,39 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { princeAPI } from "@/lib/api-client";
+import { z } from "zod";
+
+// WHY: Proxy route checks NextAuth session then forwards to princemarketing.ai.
+// API key never leaves the server.
+
+const schema = z.object({
+  prompt: z.string().min(1),
+  quality: z.enum(["pro", "standard"]).optional(),
+  aspectRatio: z.string().optional(),
+});
+
+export async function POST(request: Request) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const parsed = schema.safeParse(body);
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Invalid request", details: parsed.error.flatten() },
+        { status: 400 },
+      );
+    }
+
+    const result = await princeAPI.generateImage(parsed.data);
+    return NextResponse.json(result);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Image generation failed";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
