@@ -1,17 +1,12 @@
 import Link from "next/link";
-import Image from "next/image";
 import { ArrowRight } from "lucide-react";
-import { SplineBackground } from "@/components/SplineBackground";
 
 export function Hero() {
   return (
-    <section className="relative flex min-h-[90vh] flex-col items-center justify-center px-4 text-center sm:px-6 lg:px-8 overflow-hidden">
-      {/* Spline 3D animated background — subtle atmosphere */}
-      <SplineBackground />
-
-      {/* Subtle gradient — only used on marketing hero per brand spec */}
+    <section className="relative flex min-h-[90vh] flex-col items-center justify-center px-4 text-center sm:px-6 lg:px-8">
+      {/* Subtle gradient */}
       <div
-        className="pointer-events-none absolute inset-0 opacity-40 z-[1]"
+        className="pointer-events-none absolute inset-0 opacity-40"
         style={{
           background:
             "radial-gradient(ellipse 60% 50% at 50% 40%, rgba(99, 102, 241, 0.15) 0%, transparent 70%)",
@@ -62,21 +57,6 @@ export function Hero() {
           >
             See how it works
           </Link>
-        </div>
-      </div>
-
-      {/* Agent pipeline hero image */}
-      <div className="relative z-10 mx-auto mt-12 max-w-5xl sm:mt-16">
-        <div className="relative overflow-hidden rounded-xl border border-smoke/30 shadow-2xl shadow-royal/10">
-          <Image
-            src="/images/hero-pipeline.png"
-            alt="AI marketing agents working together in a pipeline — Strategy, Content, Image, Video, Critic, Distribution"
-            width={1200}
-            height={675}
-            className="w-full"
-            priority
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-void/60 via-transparent to-transparent" />
         </div>
       </div>
 
