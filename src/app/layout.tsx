@@ -24,6 +24,7 @@ export const metadata: Metadata = {
     "AI-powered marketing platform for solo business owners. Strategy, content, and scheduling — all handled for you.",
   icons: {
     icon: "/favicon.svg",
+    apple: "/favicon.svg",
   },
 };
 
