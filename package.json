@@ -17,6 +17,8 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "@auth/core": "^0.41.0",
     "@prisma/client": "^6.3.0",
+    "@splinetool/react-spline": "^4.1.0",
+    "@splinetool/runtime": "^1.12.73",
     "bcryptjs": "^3.0.3",
     "hono": "^4.7.0",
     "lucide-react": "^0.474.0",
