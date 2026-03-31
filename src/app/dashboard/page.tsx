@@ -204,7 +204,7 @@ export default function DashboardPage() {
         subtitle="Here is what is happening with your marketing"
       />
 
-      <div className="flex-1 px-6 py-6">
+      <div className="flex-1 px-4 py-4 sm:px-6 sm:py-6">
         {/* Metrics grid */}
         <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {METRICS.map((metric) => {
@@ -242,9 +242,9 @@ export default function DashboardPage() {
         {/* Subscription status */}
         <div className="mb-8">
           <Card padding="md">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-royal-muted">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-royal-muted">
                   <Sparkles size={20} strokeWidth={1.5} className="text-royal" />
                 </div>
                 <div>

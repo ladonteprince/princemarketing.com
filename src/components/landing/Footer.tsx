@@ -5,7 +5,7 @@ export function Footer() {
   return (
     <footer className="border-t border-smoke">
       {/* CTA Section */}
-      <section className="px-6 py-24">
+      <section className="px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="mb-4 text-3xl font-bold text-cloud sm:text-4xl">
             Ready to stop guessing?
@@ -29,7 +29,7 @@ export function Footer() {
       </section>
 
       {/* Footer links */}
-      <div className="border-t border-smoke px-6 py-8">
+      <div className="border-t border-smoke px-4 py-8 sm:px-6 lg:px-8">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 sm:flex-row">
           <div className="flex items-center gap-2">
             <img

@@ -37,7 +37,7 @@ export default function RootLayout({
       lang="en"
       className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
     >
-      <body className="bg-void text-cloud">
+      <body className="overflow-x-hidden bg-void text-cloud">
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>

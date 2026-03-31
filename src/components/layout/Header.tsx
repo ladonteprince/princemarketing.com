@@ -10,7 +10,7 @@ type HeaderProps = {
 
 export function Header({ title, subtitle }: HeaderProps) {
   return (
-    <header className="flex h-16 items-center justify-between border-b border-smoke px-6">
+    <header className="flex h-16 items-center justify-between border-b border-smoke px-4 sm:px-6">
       <div>
         <h1 className="text-lg font-semibold text-cloud">{title}</h1>
         {subtitle && (

@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -34,7 +35,11 @@ const BOTTOM_ITEMS: ReadonlyArray<NavItem> = [
   { label: "Settings", href: "/dashboard/settings", icon: Settings },
 ] as const;
 
-export function Sidebar() {
+type SidebarProps = {
+  onCloseMobile?: () => void;
+};
+
+export function Sidebar({ onCloseMobile }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
 
@@ -69,6 +74,21 @@ export function Sidebar() {
               className="h-8 w-8"
             />
           </Link>
+        )}
+        {/* Mobile close button */}
+        {onCloseMobile && (
+          <button
+            onClick={onCloseMobile}
+            className="
+              flex h-11 w-11 items-center justify-center rounded-lg
+              text-ash hover:text-cloud hover:bg-slate
+              transition-colors duration-[var(--transition-micro)]
+              cursor-pointer md:hidden
+            "
+            aria-label="Close sidebar"
+          >
+            <X size={20} strokeWidth={1.5} />
+          </button>
         )}
       </div>
 

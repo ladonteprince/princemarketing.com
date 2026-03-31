@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react";
 
 export function Hero() {
   return (
-    <section className="relative flex min-h-[90vh] flex-col items-center justify-center px-6 text-center">
+    <section className="relative flex min-h-[90vh] flex-col items-center justify-center px-4 text-center sm:px-6 lg:px-8">
       {/* Subtle gradient — only used on marketing hero per brand spec */}
       <div
         className="pointer-events-none absolute inset-0 opacity-40"
@@ -21,13 +21,13 @@ export function Hero() {
           <span className="text-sm text-ash">AI-powered marketing for solo businesses</span>
         </div>
 
-        <h1 className="mb-6 text-5xl font-bold leading-tight tracking-tight text-cloud sm:text-6xl md:text-7xl">
+        <h1 className="mb-6 text-3xl font-bold leading-tight tracking-tight text-cloud sm:text-5xl md:text-6xl lg:text-7xl">
           Your marketing,
           <br />
           <span className="text-royal">handled.</span>
         </h1>
 
-        <p className="mx-auto mb-10 max-w-xl text-lg leading-relaxed text-ash">
+        <p className="mx-auto mb-10 max-w-xl text-base leading-relaxed text-ash sm:text-lg">
           Stop guessing what to post. PrinceMarketing builds your strategy,
           creates your content, and schedules it across every platform.
           You run your business. I handle the rest.
