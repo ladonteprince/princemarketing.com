@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 200" width="680" height="200">
+  <rect width="680" height="200" fill="#0A0A0A"/>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@600;700&amp;display=swap');
+  </style>
+  <!-- "Prince" bold white + "Marketing" in Royal indigo — split color wordmark -->
+  <text x="50" y="118" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="52" fill="#FFFFFF" letter-spacing="-0.02em">Prince</text>
+  <text x="252" y="118" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="52" fill="#6366F1" letter-spacing="-0.02em">Marketing</text>
+</svg>

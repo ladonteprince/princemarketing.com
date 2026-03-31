@@ -1,0 +1,144 @@
+@import "tailwindcss";
+
+/* === Brand Design Tokens === */
+/* WHY: CSS custom properties for the brand system, used by Tailwind and components */
+
+@theme {
+  /* Dark mode palette (default) */
+  --color-void: #0A0A0A;
+  --color-graphite: #141414;
+  --color-slate: #1E1E1E;
+  --color-smoke: #2A2A2A;
+  --color-cloud: #F5F5F5;
+  --color-ash: #A3A3A3;
+  --color-royal: #6366F1;
+  --color-royal-hover: #5558E6;
+  --color-royal-muted: rgba(99, 102, 241, 0.12);
+
+  /* Light mode palette */
+  --color-paper: #FAFAFA;
+  --color-white-surface: #FFFFFF;
+
+  /* Status colors */
+  --color-mint: #34D399;
+  --color-amber: #FBBF24;
+  --color-coral: #F87171;
+
+  /* Typography */
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Transitions */
+  --transition-micro: 200ms ease-out;
+  --transition-page: 300ms ease-in-out;
+
+  /* Sidebar */
+  --sidebar-width: 280px;
+  --sidebar-collapsed: 64px;
+}
+
+/* === Base === */
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--color-void);
+  color: var(--color-cloud);
+  font-family: var(--font-sans);
+}
+
+/* === Selection === */
+::selection {
+  background-color: var(--color-royal-muted);
+  color: var(--color-cloud);
+}
+
+/* === Scrollbar (subtle) === */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-smoke);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ash);
+}
+
+/* === Skeleton Loading Animation === */
+/* WHY: Graphite-to-Slate pulse per brand spec. Never use spinners. */
+@keyframes skeleton-pulse {
+  0%, 100% {
+    background-color: var(--color-graphite);
+  }
+  50% {
+    background-color: var(--color-slate);
+  }
+}
+
+.skeleton {
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+/* === Royal Dot Pulse (AI Thinking) === */
+/* WHY: The ONLY alive animation in the product. Signature brand element. */
+@keyframes royal-dot-pulse {
+  0%, 100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.royal-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--color-royal);
+}
+
+.royal-dot-animate {
+  animation: royal-dot-pulse 1.4s ease-in-out infinite;
+}
+
+/* Sequential fade for the 3-dot AI thinking indicator */
+.thinking-dots .royal-dot:nth-child(1) {
+  animation-delay: 0ms;
+}
+.thinking-dots .royal-dot:nth-child(2) {
+  animation-delay: 200ms;
+}
+.thinking-dots .royal-dot:nth-child(3) {
+  animation-delay: 400ms;
+}
+
+/* === Focus Styles === */
+/* WHY: Royal ring on focus for accessibility, only on keyboard navigation */
+*:focus-visible {
+  outline: 2px solid var(--color-royal);
+  outline-offset: 2px;
+}
+
+/* === Page Transition === */
+.page-enter {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity var(--transition-page), transform var(--transition-page);
+}

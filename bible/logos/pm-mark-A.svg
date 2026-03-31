@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <rect width="400" height="400" fill="#0A0A0A"/>
+  <!-- Geometric P: Clean architectural lines, single stroke weight -->
+  <g transform="translate(120, 80)">
+    <!-- Vertical stem -->
+    <rect x="0" y="0" width="20" height="240" fill="#6366F1"/>
+    <!-- Bowl: two angled planes forming the P curve -->
+    <rect x="20" y="0" width="100" height="20" fill="#6366F1"/>
+    <rect x="120" y="0" width="20" height="120" fill="#6366F1"/>
+    <rect x="20" y="100" width="100" height="20" fill="#6366F1"/>
+  </g>
+</svg>

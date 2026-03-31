@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <rect width="400" height="400" rx="32" fill="#0A0A0A"/>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@700&amp;display=swap');
+  </style>
+  <!-- P lettermark centered -->
+  <text x="95" y="290" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="260" fill="#FFFFFF" letter-spacing="-0.03em">P</text>
+  <!-- Royal dot accent — signature element from the wordmark -->
+  <circle cx="310" cy="275" r="18" fill="#6366F1"/>
+</svg>

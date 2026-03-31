@@ -1,0 +1,181 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SubscriptionTier {
+  STARTER
+  GROWTH
+  SCALE
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum ContentStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  FAILED
+}
+
+enum PlatformType {
+  INSTAGRAM
+  FACEBOOK
+  TWITTER
+  LINKEDIN
+  TIKTOK
+  YOUTUBE
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+model User {
+  id             String           @id @default(cuid())
+  email          String           @unique
+  passwordHash   String
+  name           String?
+  businessName   String?
+  businessType   String?
+  industry       String?
+  tier           SubscriptionTier @default(STARTER)
+  onboarded      Boolean          @default(false)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  sessions        Session[]
+  campaigns       Campaign[]
+  calendarEntries CalendarEntry[]
+  platforms       Platform[]
+  chatSessions    ChatSession[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@map("sessions")
+}
+
+model ChatSession {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String   @default("New conversation")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([userId])
+  @@map("chat_sessions")
+}
+
+model Message {
+  id            String      @id @default(cuid())
+  chatSessionId String
+  role          MessageRole
+  content       String
+  createdAt     DateTime    @default(now())
+
+  chatSession ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+
+  @@index([chatSessionId])
+  @@map("messages")
+}
+
+model Campaign {
+  id          String         @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  goal        String?
+  status      CampaignStatus @default(DRAFT)
+  startDate   DateTime?
+  endDate     DateTime?
+  budget      Float?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries CalendarEntry[]
+
+  @@index([userId])
+  @@map("campaigns")
+}
+
+model CalendarEntry {
+  id          String        @id @default(cuid())
+  userId      String
+  campaignId  String?
+  platform    PlatformType
+  title       String
+  content     String
+  mediaUrl    String?
+  scheduledAt DateTime
+  publishedAt DateTime?
+  status      ContentStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  analytics Analytics[]
+
+  @@index([userId, scheduledAt])
+  @@index([status])
+  @@map("calendar_entries")
+}
+
+model Platform {
+  id          String       @id @default(cuid())
+  userId      String
+  type        PlatformType
+  accountName String
+  accessToken String?
+  connected   Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@map("platforms")
+}
+
+model Analytics {
+  id              String   @id @default(cuid())
+  calendarEntryId String
+  impressions     Int      @default(0)
+  engagement      Int      @default(0)
+  clicks          Int      @default(0)
+  shares          Int      @default(0)
+  comments        Int      @default(0)
+  recordedAt      DateTime @default(now())
+
+  calendarEntry CalendarEntry @relation(fields: [calendarEntryId], references: [id], onDelete: Cascade)
+
+  @@index([calendarEntryId])
+  @@map("analytics")
+}

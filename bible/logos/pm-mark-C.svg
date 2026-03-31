@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <rect width="400" height="400" fill="#0A0A0A"/>
+  <!-- Geometric P: Rounded bowl, Stripe/Apple minimal aesthetic -->
+  <g transform="translate(115, 75)">
+    <!-- Vertical stem -->
+    <rect x="0" y="0" width="22" height="250" rx="2" fill="#6366F1"/>
+    <!-- Bowl as smooth arc -->
+    <path d="M22,0 L90,0 C145,0 145,120 90,120 L22,120 L22,98 L90,98 C125,98 125,22 90,22 L22,22 Z" fill="#6366F1"/>
+  </g>
+</svg>

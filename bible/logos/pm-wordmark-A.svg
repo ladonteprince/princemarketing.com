@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 200" width="720" height="200">
+  <rect width="720" height="200" fill="#0A0A0A"/>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@700&amp;display=swap');
+  </style>
+  <!-- Single clean wordmark, Royal indigo accent on the period -->
+  <text x="50" y="118" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="52" fill="#FFFFFF" letter-spacing="-0.02em">PrinceMarketing</text>
+  <!-- Subtle Royal dot as brand accent -->
+  <circle cx="540" cy="108" r="6" fill="#6366F1"/>
+</svg>

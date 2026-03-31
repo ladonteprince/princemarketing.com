@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 200" width="780" height="200">
+  <rect width="780" height="200" fill="#0A0A0A"/>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@700&amp;display=swap');
+  </style>
+  <!-- Wordmark with .com in lighter weight -->
+  <text x="50" y="118" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="52" fill="#FFFFFF" letter-spacing="-0.02em">PrinceMarketing</text>
+  <text x="502" y="118" font-family="Inter, system-ui, sans-serif" font-weight="400" font-size="52" fill="#6366F1" letter-spacing="-0.02em">.com</text>
+</svg>

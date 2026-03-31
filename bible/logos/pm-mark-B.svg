@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <rect width="400" height="400" fill="#0A0A0A"/>
+  <!-- Geometric P: Diagonal cut, modernist architecture feel -->
+  <g transform="translate(110, 70)">
+    <!-- Vertical stem -->
+    <path d="M0,260 L0,0 L20,0 L20,260 Z" fill="#6366F1"/>
+    <!-- Angular bowl with diagonal slice -->
+    <path d="M20,0 L140,0 L140,50 L140,100 L20,100 Z" fill="#6366F1"/>
+    <!-- Inner cutout creating the P counter -->
+    <path d="M40,20 L120,20 L120,80 L40,80 Z" fill="#0A0A0A"/>
+    <!-- Diagonal cut through the bowl -->
+    <path d="M100,0 L140,0 L140,40 Z" fill="#0A0A0A" opacity="0"/>
+    <!-- Angled bottom of bowl -->
+    <path d="M20,100 L140,100 L100,140 L20,140 Z" fill="#6366F1"/>
+  </g>
+</svg>

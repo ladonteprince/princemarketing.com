@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <rect width="400" height="400" fill="#0A0A0A"/>
+  <!-- Geometric P: Negative space, two intersecting planes -->
+  <g transform="translate(100, 65)">
+    <!-- Outer shape: full rectangular P block -->
+    <rect x="0" y="0" width="180" height="270" rx="4" fill="#6366F1"/>
+    <!-- Cut: right side lower half (creates the P shape) -->
+    <rect x="24" y="140" width="156" height="106" fill="#0A0A0A"/>
+    <!-- Cut: inner counter of the P bowl -->
+    <rect x="24" y="24" width="108" height="92" rx="2" fill="#0A0A0A"/>
+    <!-- Cut: below stem to make it not a solid block -->
+    <rect x="48" y="140" width="132" height="130" fill="#0A0A0A"/>
+  </g>
+</svg>

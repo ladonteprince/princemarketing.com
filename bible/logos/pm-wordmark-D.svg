@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 200" width="680" height="200">
+  <rect width="680" height="200" fill="#0A0A0A"/>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@700&amp;display=swap');
+  </style>
+  <!-- Full white wordmark with Royal underline accent -->
+  <text x="50" y="112" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="52" fill="#FFFFFF" letter-spacing="-0.02em">PrinceMarketing</text>
+  <!-- Thin Royal accent line under the full word -->
+  <rect x="50" y="126" width="580" height="3" fill="#6366F1" rx="1.5"/>
+</svg>
