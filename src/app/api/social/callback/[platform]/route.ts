@@ -69,19 +69,20 @@ export async function GET(
       tokenBody.code_verifier = state;
     }
 
+    // All OAuth2 token endpoints accept x-www-form-urlencoded (the spec standard).
+    // Instagram and LinkedIn reject JSON; Twitter needs Basic auth header.
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+    };
+
+    if (platform === "twitter") {
+      headers.Authorization = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`;
+    }
+
     const tokenRes = await fetch(config.tokenUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": platform === "twitter"
-          ? "application/x-www-form-urlencoded"
-          : "application/json",
-        ...(platform === "twitter"
-          ? { Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}` }
-          : {}),
-      },
-      body: platform === "twitter"
-        ? new URLSearchParams(tokenBody).toString()
-        : JSON.stringify(tokenBody),
+      headers,
+      body: new URLSearchParams(tokenBody).toString(),
     });
 
     const tokenData = await tokenRes.json();
