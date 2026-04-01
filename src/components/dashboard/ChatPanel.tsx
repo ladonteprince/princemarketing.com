@@ -143,6 +143,9 @@ async function executeAction(
         };
         onCanvasAction({ type: "add-node", node });
 
+        // Always open the video editor for the new project
+        onCanvasAction({ type: "open-video-editor", videoProjectId });
+
         // Trigger video generation and stream progress via SSE
         if (action.prompt) {
           // Detect video generation mode from action data
@@ -216,7 +219,6 @@ async function executeAction(
           }
         }
 
-        onCanvasAction({ type: "open-video-editor", videoProjectId });
         return { success: true, detail: `Video project created with ${action.scenes?.length ?? 0} scenes`, nodeRef: id };
       } catch (err) {
         return { success: false, detail: err instanceof Error ? err.message : "Failed" };
