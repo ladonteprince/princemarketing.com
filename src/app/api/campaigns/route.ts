@@ -1,12 +1,18 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createCampaignSchema } from "@/types/campaign";
 
-// GET /api/campaigns — List user's campaigns
+// GET /api/campaigns — List authenticated user's campaigns
 export async function GET() {
   try {
-    // WHY: In production, get userId from session cookie. Using mock for initial build.
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const campaigns = await db.campaign.findMany({
+      where: { userId: session.user.id },
       orderBy: { createdAt: "desc" },
       take: 50,
     });
@@ -21,9 +27,14 @@ export async function GET() {
   }
 }
 
-// POST /api/campaigns — Create a new campaign
+// POST /api/campaigns — Create a new campaign for the authenticated user
 export async function POST(request: Request) {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await request.json();
     const parsed = createCampaignSchema.safeParse(body);
 
@@ -34,10 +45,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // WHY: userId would come from authenticated session in production
     const campaign = await db.campaign.create({
       data: {
-        userId: "mock-user-id",
+        userId: session.user.id,
         name: parsed.data.name,
         description: parsed.data.description,
         goal: parsed.data.goal,

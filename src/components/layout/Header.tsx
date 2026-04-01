@@ -1,6 +1,7 @@
 "use client";
 
 import { Bell, Search } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { Avatar } from "@/components/ui/Avatar";
 
 type HeaderProps = {
@@ -9,6 +10,9 @@ type HeaderProps = {
 };
 
 export function Header({ title, subtitle }: HeaderProps) {
+  const { data: session } = useSession();
+  const userName = session?.user?.name ?? "User";
+
   return (
     <header className="flex h-16 items-center justify-between border-b border-smoke px-4 sm:px-6">
       <div>
@@ -43,12 +47,10 @@ export function Header({ title, subtitle }: HeaderProps) {
           aria-label="Notifications"
         >
           <Bell size={18} strokeWidth={1.5} />
-          {/* Notification indicator */}
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-royal" />
         </button>
 
-        {/* User avatar */}
-        <Avatar name="Marcus" size="sm" />
+        {/* User avatar — real name from session */}
+        <Avatar name={userName} size="sm" />
       </div>
     </header>
   );

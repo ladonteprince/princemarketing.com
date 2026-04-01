@@ -1,36 +1,27 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { ChevronLeft, ChevronRight, Send } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import {
   getWeekDates,
   isToday,
+  isSameDay,
   formatDate,
+  formatTime,
 } from "@/utils/date";
 import type { ContentStatus, PlatformType } from "@/types/calendar";
 
-// WHY: Mock data that demonstrates Marcus's real use case — 7:15am, see today's content
-type MockEntry = {
+type CalendarEntry = {
   id: string;
   title: string;
+  content: string;
   platform: PlatformType;
-  time: string;
+  scheduledAt: string;
   status: ContentStatus;
-  dayOffset: number; // 0 = Monday of current week
+  mediaUrl: string | null;
 };
-
-const MOCK_ENTRIES: ReadonlyArray<MockEntry> = [
-  { id: "1", title: "5 plumbing tips every homeowner needs", platform: "INSTAGRAM", time: "9:00 AM", status: "SCHEDULED", dayOffset: 0 },
-  { id: "2", title: "Before/after: Kitchen sink replacement", platform: "FACEBOOK", time: "12:30 PM", status: "SCHEDULED", dayOffset: 0 },
-  { id: "3", title: "Why regular maintenance saves thousands", platform: "LINKEDIN", time: "8:00 AM", status: "DRAFT", dayOffset: 1 },
-  { id: "4", title: "Customer spotlight: The Johnsons", platform: "INSTAGRAM", time: "10:00 AM", status: "PUBLISHED", dayOffset: 2 },
-  { id: "5", title: "Emergency winter checklist", platform: "TWITTER", time: "11:00 AM", status: "DRAFT", dayOffset: 2 },
-  { id: "6", title: "Video: How to unclog a drain", platform: "TIKTOK", time: "3:00 PM", status: "SCHEDULED", dayOffset: 3 },
-  { id: "7", title: "Weekend service availability", platform: "FACEBOOK", time: "9:00 AM", status: "SCHEDULED", dayOffset: 4 },
-  { id: "8", title: "Plumbing myths debunked", platform: "INSTAGRAM", time: "11:00 AM", status: "DRAFT", dayOffset: 5 },
-];
 
 const PLATFORM_LABELS: Record<PlatformType, string> = {
   INSTAGRAM: "IG",
@@ -52,10 +43,64 @@ const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 
 export function WeekView() {
   const [weekOffset, setWeekOffset] = useState(0);
+  const [entries, setEntries] = useState<CalendarEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [publishing, setPublishing] = useState<string | null>(null);
 
   const referenceDate = new Date();
   referenceDate.setDate(referenceDate.getDate() + weekOffset * 7);
   const weekDates = getWeekDates(referenceDate);
+
+  const fetchEntries = useCallback(async () => {
+    setLoading(true);
+    try {
+      const start = weekDates[0].toISOString();
+      const end = new Date(weekDates[6].getTime() + 86400000 - 1).toISOString();
+      const res = await fetch(`/api/calendar?start=${start}&end=${end}`);
+
+      if (res.ok) {
+        const data = await res.json();
+        setEntries(data.entries ?? []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch calendar entries:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [weekOffset]);
+
+  useEffect(() => {
+    fetchEntries();
+  }, [fetchEntries]);
+
+  async function handlePublish(entry: CalendarEntry) {
+    setPublishing(entry.id);
+    try {
+      const platformKey = entry.platform.toLowerCase();
+      const res = await fetch("/api/social/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: entry.content,
+          platforms: [platformKey],
+          mediaUrl: entry.mediaUrl ?? undefined,
+          calendarEntryId: entry.id,
+        }),
+      });
+
+      if (res.ok) {
+        // Refresh entries to show updated status
+        await fetchEntries();
+      } else {
+        const data = await res.json();
+        alert(data.error ?? "Failed to publish. Check Settings to ensure the platform is connected.");
+      }
+    } catch {
+      alert("Network error. Please try again.");
+    } finally {
+      setPublishing(null);
+    }
+  }
 
   return (
     <div>
@@ -92,73 +137,96 @@ export function WeekView() {
         )}
       </div>
 
+      {/* Loading state */}
+      {loading && (
+        <div className="flex items-center justify-center py-12">
+          <div className="text-sm text-ash">Loading calendar...</div>
+        </div>
+      )}
+
       {/* Week grid */}
-      <div className="grid grid-cols-7 gap-3">
-        {weekDates.map((date, dayIndex) => {
-          const today = isToday(date);
-          const dayEntries = MOCK_ENTRIES.filter(
-            (e) => e.dayOffset === dayIndex,
-          );
+      {!loading && (
+        <div className="grid grid-cols-7 gap-3">
+          {weekDates.map((date, dayIndex) => {
+            const today = isToday(date);
+            const dayEntries = entries.filter((e) =>
+              isSameDay(new Date(e.scheduledAt), date),
+            );
 
-          return (
-            <div
-              key={dayIndex}
-              className={`
-                min-h-[200px] rounded-xl border p-3
-                ${today ? "border-royal/40 bg-royal-muted/30" : "border-smoke bg-graphite"}
-              `}
-            >
-              {/* Day header */}
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-xs font-medium text-ash">
-                  {DAY_NAMES[dayIndex]}
-                </span>
-                <span
-                  className={`
-                    flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium
-                    ${today ? "bg-royal text-white" : "text-cloud"}
-                  `}
-                >
-                  {date.getDate()}
-                </span>
-              </div>
-
-              {/* Entries */}
-              <div className="flex flex-col gap-2">
-                {dayEntries.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="group cursor-pointer rounded-lg border border-smoke bg-slate p-2 transition-colors hover:border-ash/30"
+            return (
+              <div
+                key={dayIndex}
+                className={`
+                  min-h-[200px] rounded-xl border p-3
+                  ${today ? "border-royal/40 bg-royal-muted/30" : "border-smoke bg-graphite"}
+                `}
+              >
+                {/* Day header */}
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="text-xs font-medium text-ash">
+                    {DAY_NAMES[dayIndex]}
+                  </span>
+                  <span
+                    className={`
+                      flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium
+                      ${today ? "bg-royal text-white" : "text-cloud"}
+                    `}
                   >
-                    <div className="mb-1 flex items-center justify-between">
-                      <span className="text-[10px] font-mono text-ash">
-                        {entry.time}
-                      </span>
-                      <span className="text-[10px] font-medium text-ash">
-                        {PLATFORM_LABELS[entry.platform]}
-                      </span>
-                    </div>
-                    <p className="text-xs leading-snug text-cloud line-clamp-2">
-                      {entry.title}
-                    </p>
-                    <div className="mt-1.5">
-                      <Badge variant={STATUS_BADGE_VARIANT[entry.status]}>
-                        {entry.status.toLowerCase()}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
+                    {date.getDate()}
+                  </span>
+                </div>
 
-                {dayEntries.length === 0 && (
-                  <p className="py-4 text-center text-[10px] text-ash/40">
-                    No posts
-                  </p>
-                )}
+                {/* Entries */}
+                <div className="flex flex-col gap-2">
+                  {dayEntries.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="group cursor-pointer rounded-lg border border-smoke bg-slate p-2 transition-colors hover:border-ash/30"
+                    >
+                      <div className="mb-1 flex items-center justify-between">
+                        <span className="text-[10px] font-mono text-ash">
+                          {formatTime(entry.scheduledAt)}
+                        </span>
+                        <span className="text-[10px] font-medium text-ash">
+                          {PLATFORM_LABELS[entry.platform]}
+                        </span>
+                      </div>
+                      <p className="text-xs leading-snug text-cloud line-clamp-2">
+                        {entry.title}
+                      </p>
+                      <div className="mt-1.5 flex items-center justify-between">
+                        <Badge variant={STATUS_BADGE_VARIANT[entry.status]}>
+                          {entry.status.toLowerCase()}
+                        </Badge>
+                        {(entry.status === "SCHEDULED" || entry.status === "DRAFT") && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePublish(entry);
+                            }}
+                            disabled={publishing === entry.id}
+                            className="flex items-center gap-1 text-[10px] text-royal hover:text-royal-hover transition-colors cursor-pointer disabled:opacity-50"
+                            title="Publish now"
+                          >
+                            <Send size={10} strokeWidth={1.5} />
+                            {publishing === entry.id ? "..." : "Publish"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  {dayEntries.length === 0 && (
+                    <p className="py-4 text-center text-[10px] text-ash/40">
+                      No posts
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

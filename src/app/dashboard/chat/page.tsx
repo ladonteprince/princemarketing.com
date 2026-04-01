@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import { Header } from "@/components/layout/Header";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ThinkingDots } from "@/components/ui/ThinkingDots";
 import { streamChat } from "@/lib/api";
+import { AlertCircle } from "lucide-react";
 
 type Message = {
   id: string;
@@ -13,7 +15,6 @@ type Message = {
   content: string;
 };
 
-// WHY: The initial greeting starts the conversational onboarding flow
 const INITIAL_MESSAGE: Message = {
   id: "initial",
   role: "assistant",
@@ -22,10 +23,14 @@ const INITIAL_MESSAGE: Message = {
 };
 
 export default function ChatPage() {
+  const { data: session } = useSession();
   const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
   const [isThinking, setIsThinking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [sessionId] = useState(() => crypto.randomUUID());
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const userName = session?.user?.name ?? "You";
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -43,6 +48,7 @@ export default function ChatPage() {
     };
     setMessages((prev) => [...prev, userMessage]);
     setIsThinking(true);
+    setError(null);
 
     // 2. Stream AI response
     const assistantId = crypto.randomUUID();
@@ -71,17 +77,11 @@ export default function ChatPage() {
           setIsThinking(false);
         },
       );
-    } catch {
-      // Fallback: simulate a response if API is not connected
+    } catch (err) {
+      // Show real error — no mock fallback
       setIsThinking(false);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: assistantId,
-          role: "assistant",
-          content: generateMockResponse(content),
-        },
-      ]);
+      const message = err instanceof Error ? err.message : "Failed to connect to AI";
+      setError(message);
     }
   }
 
@@ -91,6 +91,20 @@ export default function ChatPage() {
         title="AI Strategist"
         subtitle="Your personal marketing partner"
       />
+
+      {/* Error banner */}
+      {error && (
+        <div className="mx-6 mt-4 flex items-center gap-2 rounded-lg border border-coral/30 bg-coral/10 px-4 py-3 text-sm text-coral">
+          <AlertCircle size={16} strokeWidth={1.5} />
+          <span>{error}</span>
+          <button
+            onClick={() => setError(null)}
+            className="ml-auto text-coral/60 hover:text-coral cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Messages area */}
       <div
@@ -103,7 +117,7 @@ export default function ChatPage() {
               key={message.id}
               role={message.role}
               content={message.content}
-              userName="Marcus"
+              userName={userName}
             />
           ))}
 
@@ -130,23 +144,4 @@ export default function ChatPage() {
       </div>
     </div>
   );
-}
-
-// WHY: Mock responses for demo/development when Claude API is not connected
-function generateMockResponse(userMessage: string): string {
-  const lower = userMessage.toLowerCase();
-
-  if (lower.includes("plumb") || lower.includes("pipe") || lower.includes("fix")) {
-    return "A plumbing business — that is a service people need urgently but rarely think about until something breaks. That gives us a great content angle.\n\nHere is what I am thinking for your strategy:\n\n1. Educational content that positions you as the expert (tips, maintenance checklists)\n2. Before/after project photos — these perform extremely well on Instagram and Facebook\n3. Emergency service availability posts — time-sensitive content gets high engagement\n\nWhich platforms are you currently using, or where do your customers spend time online?";
-  }
-
-  if (lower.includes("bake") || lower.includes("cake") || lower.includes("food")) {
-    return "A bakery is a dream to market — your product is visually stunning and emotionally connected to celebrations.\n\nI would focus your strategy on:\n\n1. Behind-the-scenes content (the process is as compelling as the result)\n2. Customer celebration stories (weddings, birthdays, milestones)\n3. Limited-time seasonal offers that create urgency\n\nWhat platforms are you most interested in? Instagram and TikTok tend to work best for visual food content.";
-  }
-
-  if (lower.includes("instagram") || lower.includes("facebook") || lower.includes("tiktok") || lower.includes("platform")) {
-    return "Good choices. I will build your content calendar around those platforms with posting times optimized for your audience.\n\nFor the first week, I will prepare:\n- 3 Instagram posts (mix of carousel tips and visual content)\n- 2 Facebook posts (longer-form, community-focused)\n- 1 LinkedIn article (position you as an industry expert)\n\nI will have your first week ready in the Content Calendar. You can review and approve each post before it goes live.\n\nWhat is your biggest marketing challenge right now?";
-  }
-
-  return "That is helpful context. Based on what you have told me, I am building a content strategy tailored to your business.\n\nI will focus on:\n- Consistent posting schedule (so your audience knows when to expect content)\n- A mix of educational and promotional content (the 80/20 rule)\n- Platform-specific formats (what works on Instagram is different from LinkedIn)\n\nYour first week of content will appear in the Content Calendar tab. You will be able to review, edit, and approve each post with one tap.\n\nIs there anything specific you want to focus on first?";
 }

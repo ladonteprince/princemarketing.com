@@ -114,7 +114,7 @@ export default function RegisterPage() {
           <Input
             label="Your name"
             type="text"
-            placeholder="Marcus Johnson"
+            placeholder="Your full name"
             value={form.name}
             onChange={(e) => updateField("name", e.target.value)}
             error={errors.name}

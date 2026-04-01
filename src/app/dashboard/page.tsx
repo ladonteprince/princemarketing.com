@@ -1,115 +1,59 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import { Header } from "@/components/layout/Header";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import {
-  TrendingUp,
   Eye,
-  MousePointerClick,
+  TrendingUp,
   CalendarCheck,
-  ArrowUpRight,
-  ArrowDownRight,
+  Sparkles,
+  Clock,
   ImageIcon,
   Video,
   FileText,
-  Sparkles,
-  Clock,
+  BarChart3,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-// WHY: Mock data to demonstrate the dashboard. In production, fetched from API.
-type MetricData = {
-  label: string;
-  value: string;
-  change: number;
-  icon: LucideIcon;
+type DashboardData = {
+  userName: string;
+  tier: string;
+  totalImpressions: number;
+  totalEngagement: number;
+  postsThisWeek: number;
+  postsPublished: number;
+  upcomingEntries: {
+    id: string;
+    title: string;
+    platform: string;
+    scheduledAt: string;
+    status: string;
+  }[];
 };
 
-const METRICS: ReadonlyArray<MetricData> = [
-  { label: "Total impressions", value: "24.8K", change: 12.3, icon: Eye },
-  { label: "Engagement rate", value: "4.2%", change: 0.8, icon: TrendingUp },
-  { label: "Link clicks", value: "1,847", change: -2.1, icon: MousePointerClick },
-  { label: "Posts this week", value: "12", change: 3, icon: CalendarCheck },
-];
-
-type UpcomingPost = {
-  id: string;
-  title: string;
-  platform: string;
-  time: string;
-  status: "scheduled" | "draft";
+const TIER_NAMES: Record<string, string> = {
+  STARTER: "Starter Plan",
+  GROWTH: "Growth Plan",
+  SCALE: "Scale Plan",
 };
 
-const UPCOMING_POSTS: ReadonlyArray<UpcomingPost> = [
-  {
-    id: "1",
-    title: "5 plumbing tips every homeowner needs",
-    platform: "Instagram",
-    time: "Today, 9:00 AM",
-    status: "scheduled",
-  },
-  {
-    id: "2",
-    title: "Before/after: Kitchen sink replacement",
-    platform: "Facebook",
-    time: "Today, 12:30 PM",
-    status: "scheduled",
-  },
-  {
-    id: "3",
-    title: "Why regular maintenance saves you thousands",
-    platform: "LinkedIn",
-    time: "Tomorrow, 8:00 AM",
-    status: "draft",
-  },
-  {
-    id: "4",
-    title: "Emergency plumbing checklist for winter",
-    platform: "Twitter",
-    time: "Tomorrow, 10:00 AM",
-    status: "draft",
-  },
-];
+function formatNumber(n: number): string {
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return n.toString();
+}
 
-const RECENT_ACTIVITY = [
-  { text: "I scheduled 5 posts for this week", time: "2h ago" },
-  { text: "Instagram post published: 'Customer spotlight'", time: "5h ago" },
-  { text: "New campaign created: 'Spring Promotion'", time: "1d ago" },
-  { text: "I updated your content strategy based on last week's results", time: "2d ago" },
-];
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
 
-// WHY: Placeholder recent generations to show the list pattern before real data flows.
-type RecentGeneration = {
-  id: string;
-  type: "image" | "video" | "copy";
-  prompt: string;
-  status: "completed" | "processing" | "failed";
-  time: string;
-};
-
-const RECENT_GENERATIONS: ReadonlyArray<RecentGeneration> = [
-  { id: "g1", type: "image", prompt: "Professional plumber at work, modern bathroom", status: "completed", time: "1h ago" },
-  { id: "g2", type: "video", prompt: "Quick tip: How to fix a leaky faucet", status: "completed", time: "3h ago" },
-  { id: "g3", type: "copy", prompt: "Write Instagram caption for spring promo", status: "completed", time: "5h ago" },
-  { id: "g4", type: "image", prompt: "Before/after kitchen renovation", status: "processing", time: "Just now" },
-];
-
-const generationTypeIcon: Record<RecentGeneration["type"], LucideIcon> = {
-  image: ImageIcon,
-  video: Video,
-  copy: FileText,
-};
-
-const statusBadgeVariant: Record<RecentGeneration["status"], "mint" | "amber" | "coral"> = {
-  completed: "mint",
-  processing: "amber",
-  failed: "coral",
-};
-
-// WHY: Generation card component keeps the main page clean
 function GenerationCard({
   title,
   description,
@@ -167,9 +111,29 @@ function GenerationCard({
 }
 
 export default function DashboardPage() {
+  const { data: session } = useSession();
+  const [dashData, setDashData] = useState<DashboardData | null>(null);
+  const [pageLoading, setPageLoading] = useState(true);
   const [loading, setLoading] = useState<string | null>(null);
   const [result, setResult] = useState<{ type: string; data: unknown } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchDashboard() {
+      try {
+        const res = await fetch("/api/dashboard");
+        if (res.ok) {
+          const data = await res.json();
+          setDashData(data);
+        }
+      } catch {
+        // Silent fail — will show empty states
+      } finally {
+        setPageLoading(false);
+      }
+    }
+    fetchDashboard();
+  }, []);
 
   async function handleGenerate(type: string, prompt: string) {
     setLoading(type);
@@ -197,47 +161,69 @@ export default function DashboardPage() {
     }
   }
 
+  const userName = dashData?.userName ?? session?.user?.name ?? "there";
+  const tier = dashData?.tier ?? (session?.user as { tier?: string })?.tier ?? "STARTER";
+  const greeting = getGreeting();
+
   return (
     <div className="flex flex-col">
       <Header
-        title="Good morning, Marcus"
+        title={`${greeting}, ${userName}`}
         subtitle="Here is what is happening with your marketing"
       />
 
       <div className="flex-1 px-4 py-4 sm:px-6 sm:py-6">
         {/* Metrics grid */}
-        <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {METRICS.map((metric) => {
-            const Icon = metric.icon;
-            const isPositive = metric.change >= 0;
-
-            return (
-              <Card key={metric.label} padding="md">
-                <div className="mb-3 flex items-center justify-between">
-                  <span className="text-sm text-ash">{metric.label}</span>
-                  <Icon size={16} strokeWidth={1.5} className="text-ash" />
-                </div>
-                <div className="flex items-end justify-between">
-                  <span className="font-mono text-2xl font-bold text-cloud">
-                    {metric.value}
-                  </span>
-                  <span
-                    className={`flex items-center gap-0.5 text-xs font-medium ${
-                      isPositive ? "text-emerald-400" : "text-red-400"
-                    }`}
-                  >
-                    {isPositive ? (
-                      <ArrowUpRight size={14} strokeWidth={1.5} />
-                    ) : (
-                      <ArrowDownRight size={14} strokeWidth={1.5} />
-                    )}
-                    {Math.abs(metric.change)}%
-                  </span>
-                </div>
+        {pageLoading ? (
+          <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i} padding="md">
+                <div className="h-16 animate-pulse rounded bg-slate" />
               </Card>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Card padding="md">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-sm text-ash">Total impressions</span>
+                <Eye size={16} strokeWidth={1.5} className="text-ash" />
+              </div>
+              <span className="font-mono text-2xl font-bold text-cloud">
+                {formatNumber(dashData?.totalImpressions ?? 0)}
+              </span>
+            </Card>
+            <Card padding="md">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-sm text-ash">Engagement rate</span>
+                <TrendingUp size={16} strokeWidth={1.5} className="text-ash" />
+              </div>
+              <span className="font-mono text-2xl font-bold text-cloud">
+                {dashData && dashData.totalImpressions > 0
+                  ? `${((dashData.totalEngagement / dashData.totalImpressions) * 100).toFixed(1)}%`
+                  : "0%"}
+              </span>
+            </Card>
+            <Card padding="md">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-sm text-ash">Posts this week</span>
+                <CalendarCheck size={16} strokeWidth={1.5} className="text-ash" />
+              </div>
+              <span className="font-mono text-2xl font-bold text-cloud">
+                {dashData?.postsThisWeek ?? 0}
+              </span>
+            </Card>
+            <Card padding="md">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-sm text-ash">Total published</span>
+                <BarChart3 size={16} strokeWidth={1.5} className="text-ash" />
+              </div>
+              <span className="font-mono text-2xl font-bold text-cloud">
+                {dashData?.postsPublished ?? 0}
+              </span>
+            </Card>
+          </div>
+        )}
 
         {/* Subscription status */}
         <div className="mb-8">
@@ -248,21 +234,15 @@ export default function DashboardPage() {
                   <Sparkles size={20} strokeWidth={1.5} className="text-royal" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-cloud">Pro Plan</h3>
+                  <h3 className="text-sm font-semibold text-cloud">
+                    {TIER_NAMES[tier] ?? "Starter Plan"}
+                  </h3>
                   <p className="text-xs text-ash">
-                    47 of 100 generations used this month
+                    {dashData?.postsPublished ?? 0} posts published total
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="h-2 w-32 overflow-hidden rounded-full bg-smoke">
-                  <div
-                    className="h-full rounded-full bg-royal transition-all duration-500"
-                    style={{ width: "47%" }}
-                  />
-                </div>
-                <Badge variant="royal">Active</Badge>
-              </div>
+              <Badge variant="royal">Active</Badge>
             </div>
           </Card>
         </div>
@@ -273,7 +253,6 @@ export default function DashboardPage() {
             Create content
           </h2>
 
-          {/* Success / error feedback */}
           {error && (
             <div className="mb-4 rounded-lg border border-coral/30 bg-coral/10 px-4 py-3 text-sm text-coral">
               {error}
@@ -313,98 +292,67 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Recent generations */}
-        <div className="mb-8">
-          <h2 className="mb-4 text-base font-semibold text-cloud">
-            Recent generations
-          </h2>
-          <Card padding="none">
-            <ul className="divide-y divide-smoke">
-              {RECENT_GENERATIONS.map((gen) => {
-                const Icon = generationTypeIcon[gen.type];
-                return (
-                  <li key={gen.id} className="flex items-center gap-4 px-4 py-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-royal-muted">
-                      <Icon size={16} strokeWidth={1.5} className="text-royal" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-cloud">{gen.prompt}</p>
-                      <div className="flex items-center gap-2 text-xs text-ash">
-                        <Clock size={12} strokeWidth={1.5} />
-                        {gen.time}
-                      </div>
-                    </div>
-                    <Badge variant={statusBadgeVariant[gen.status]}>
-                      {gen.status === "completed"
-                        ? "Done"
-                        : gen.status === "processing"
-                          ? "Processing"
-                          : "Failed"}
-                    </Badge>
-                  </li>
-                );
-              })}
-            </ul>
-          </Card>
-        </div>
+        {/* Upcoming content */}
+        <div>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-base font-semibold text-cloud">
+              Upcoming content
+            </h2>
+            <a
+              href="/dashboard/calendar"
+              className="text-sm text-royal transition-colors hover:text-royal-hover"
+            >
+              View calendar
+            </a>
+          </div>
 
-        <div className="grid gap-6 lg:grid-cols-5">
-          {/* Upcoming content — left 3 columns */}
-          <div className="lg:col-span-3">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-cloud">
-                Upcoming content
-              </h2>
-              <a
-                href="/dashboard/calendar"
-                className="text-sm text-royal transition-colors hover:text-royal-hover"
-              >
-                View calendar
-              </a>
+          {pageLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Card key={i} padding="sm">
+                  <div className="h-12 animate-pulse rounded bg-slate" />
+                </Card>
+              ))}
             </div>
-
+          ) : !dashData?.upcomingEntries?.length ? (
+            <Card padding="md">
+              <div className="flex flex-col items-center py-6">
+                <Clock size={24} strokeWidth={1.5} className="mb-2 text-ash" />
+                <p className="text-sm text-ash">
+                  Nothing scheduled yet. Create content and add it to your calendar.
+                </p>
+              </div>
+            </Card>
+          ) : (
             <div className="flex flex-col gap-3">
-              {UPCOMING_POSTS.map((post) => (
-                <Card key={post.id} padding="sm" hover>
+              {dashData.upcomingEntries.map((entry) => (
+                <Card key={entry.id} padding="sm" hover>
                   <div className="flex items-center justify-between gap-4 px-2">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-cloud">
-                        {post.title}
+                        {entry.title}
                       </p>
                       <p className="text-xs text-ash">
-                        {post.platform} &middot; {post.time}
+                        {entry.platform} &middot;{" "}
+                        {new Date(entry.scheduledAt).toLocaleDateString("en-US", {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
                       </p>
                     </div>
                     <Badge
-                      variant={
-                        post.status === "scheduled" ? "royal" : "default"
-                      }
+                      variant={entry.status === "SCHEDULED" ? "royal" : "default"}
                     >
-                      {post.status === "scheduled" ? "Scheduled" : "Draft"}
+                      {entry.status === "SCHEDULED" ? "Scheduled" : "Draft"}
                     </Badge>
                   </div>
                 </Card>
               ))}
             </div>
-          </div>
-
-          {/* Activity feed — right 2 columns */}
-          <div className="lg:col-span-2">
-            <h2 className="mb-4 text-base font-semibold text-cloud">
-              Recent activity
-            </h2>
-
-            <Card padding="none">
-              <ul className="divide-y divide-smoke">
-                {RECENT_ACTIVITY.map((activity, i) => (
-                  <li key={i} className="px-4 py-3">
-                    <p className="text-sm text-cloud">{activity.text}</p>
-                    <p className="mt-0.5 text-xs text-ash">{activity.time}</p>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          </div>
+          )}
         </div>
       </div>
     </div>
