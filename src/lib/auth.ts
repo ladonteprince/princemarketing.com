@@ -1,22 +1,25 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import Google from "next-auth/providers/google";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
 
-// WHY: NextAuth v5 config with Credentials provider.
-// Uses Prisma to look up users by email, bcrypt for password verification.
-
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.NEXTAUTH_SECRET,
+  trustHost: true,
   session: {
     strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    maxAge: 30 * 24 * 60 * 60,
   },
   pages: {
     signIn: "/login",
     newUser: "/dashboard",
   },
   providers: [
+    Google({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    }),
     Credentials({
       name: "credentials",
       credentials: {
@@ -54,8 +57,30 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
+    async signIn({ user, account }) {
+      if (account?.provider === "google" && user.email) {
+        const existing = await db.user.findUnique({ where: { email: user.email } });
+        if (!existing) {
+          await db.user.create({
+            data: {
+              email: user.email,
+              name: user.name ?? "",
+              passwordHash: "",
+              tier: "STARTER",
+            },
+          });
+        }
+      }
+      return true;
+    },
+    async jwt({ token, user, account }) {
+      if (user && account?.provider === "google" && user.email) {
+        const dbUser = await db.user.findUnique({ where: { email: user.email } });
+        if (dbUser) {
+          token.id = dbUser.id;
+          token.tier = dbUser.tier;
+        }
+      } else if (user) {
         token.id = user.id;
         token.tier = (user as { tier?: string }).tier ?? "STARTER";
       }
