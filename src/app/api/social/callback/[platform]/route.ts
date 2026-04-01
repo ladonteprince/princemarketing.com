@@ -3,7 +3,12 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { isValidPlatform, PLATFORMS, getPlatformCredentials } from "@/lib/social/platforms";
 
-// GET /api/social/callback/[platform] — Handles OAuth callback, exchanges code for token
+const BASE = () => process.env.NEXTAUTH_URL || "https://princemarketing.com";
+
+function settingsRedirect(query: string) {
+  return NextResponse.redirect(`${BASE()}/dashboard/settings?${query}`);
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ platform: string }> },
@@ -11,15 +16,13 @@ export async function GET(
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.redirect(new URL("/login", request.url));
+      return NextResponse.redirect(`${BASE()}/login`);
     }
 
     const { platform } = await params;
 
     if (!isValidPlatform(platform)) {
-      return NextResponse.redirect(
-        new URL("/dashboard/settings?error=invalid_platform", request.url),
-      );
+      return settingsRedirect("error=invalid_platform");
     }
 
     const url = new URL(request.url);
@@ -28,19 +31,12 @@ export async function GET(
     const error = url.searchParams.get("error");
 
     if (error) {
-      // WHY: LinkedIn returns "redirect_uri does not match" as an error_description param.
-      // Show a user-friendly message instead of the raw OAuth error code.
       const errorDesc = url.searchParams.get("error_description") ?? error;
-      const friendlyError = encodeURIComponent(errorDesc);
-      return NextResponse.redirect(
-        new URL(`/dashboard/settings?error=${error}&message=${friendlyError}`, request.url),
-      );
+      return settingsRedirect(`error=${error}&message=${encodeURIComponent(errorDesc)}`);
     }
 
     if (!code) {
-      return NextResponse.redirect(
-        new URL("/dashboard/settings?error=no_code", request.url),
-      );
+      return settingsRedirect("error=no_code");
     }
 
     // CSRF verification
@@ -49,20 +45,16 @@ export async function GET(
     const savedState = stateMatch?.[1];
 
     if (!savedState || savedState !== state) {
-      return NextResponse.redirect(
-        new URL("/dashboard/settings?error=invalid_state", request.url),
-      );
+      return settingsRedirect("error=invalid_state");
     }
 
     const { clientId, clientSecret } = getPlatformCredentials(platform);
     if (!clientId || !clientSecret) {
-      return NextResponse.redirect(
-        new URL("/dashboard/settings?error=not_configured", request.url),
-      );
+      return settingsRedirect("error=not_configured");
     }
 
     const config = PLATFORMS[platform];
-    const redirectUri = `${process.env.NEXTAUTH_URL}/api/social/callback/${platform}`;
+    const redirectUri = `${BASE()}/api/social/callback/${platform}`;
 
     // Exchange code for access token
     const tokenBody: Record<string, string> = {
@@ -73,7 +65,6 @@ export async function GET(
       grant_type: "authorization_code",
     };
 
-    // Twitter uses PKCE
     if (platform === "twitter") {
       tokenBody.code_verifier = state;
     }
@@ -98,12 +89,10 @@ export async function GET(
 
     if (!accessToken) {
       console.error("Token exchange failed:", tokenData);
-      return NextResponse.redirect(
-        new URL("/dashboard/settings?error=token_exchange_failed", request.url),
-      );
+      return settingsRedirect("error=token_exchange_failed");
     }
 
-    // Get account name based on platform
+    // Get account name
     let accountName: string = config.name;
     try {
       if (platform === "facebook" || platform === "instagram") {
@@ -115,8 +104,7 @@ export async function GET(
           headers: { Authorization: `Bearer ${accessToken}` },
         });
         const meData = await meRes.json();
-        const username = (meData.data?.username as string) ?? "unknown";
-        accountName = `@${username}`;
+        accountName = `@${(meData.data?.username as string) ?? "unknown"}`;
       } else if (platform === "linkedin") {
         const meRes = await fetch("https://api.linkedin.com/v2/userinfo", {
           headers: { Authorization: `Bearer ${accessToken}` },
@@ -125,41 +113,21 @@ export async function GET(
         accountName = (meData.name as string) ?? config.name;
       }
     } catch {
-      // Keep default name on fetch failure
+      // Keep default name
     }
 
     // Upsert platform in database
     await db.platform.upsert({
-      where: {
-        userId_type: {
-          userId: session.user.id,
-          type: config.dbType,
-        },
-      },
-      create: {
-        userId: session.user.id,
-        type: config.dbType,
-        accountName,
-        accessToken,
-        connected: true,
-      },
-      update: {
-        accountName,
-        accessToken,
-        connected: true,
-      },
+      where: { userId_type: { userId: session.user.id, type: config.dbType } },
+      create: { userId: session.user.id, type: config.dbType, accountName, accessToken, connected: true },
+      update: { accountName, accessToken, connected: true },
     });
 
-    // Clear the state cookie and redirect
-    const response = NextResponse.redirect(
-      new URL(`/dashboard/settings?connected=${platform}`, request.url),
-    );
+    const response = NextResponse.redirect(`${BASE()}/dashboard/settings?connected=${platform}`);
     response.cookies.delete(`oauth_state_${platform}`);
     return response;
   } catch (error) {
     console.error("Social callback error:", error);
-    return NextResponse.redirect(
-      new URL("/dashboard/settings?error=callback_failed", request.url),
-    );
+    return settingsRedirect("error=callback_failed");
   }
 }

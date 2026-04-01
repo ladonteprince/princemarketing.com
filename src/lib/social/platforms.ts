@@ -34,7 +34,7 @@ export const PLATFORMS = {
     name: "LinkedIn",
     authUrl: "https://www.linkedin.com/oauth/v2/authorization",
     tokenUrl: "https://www.linkedin.com/oauth/v2/accessToken",
-    scopes: ["w_member_social", "r_liteprofile"],
+    scopes: ["openid", "profile", "email", "w_member_social"],
     icon: "Linkedin",
     envPrefix: "LINKEDIN",
     dbType: "LINKEDIN" as const,
