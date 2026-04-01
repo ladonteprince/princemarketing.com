@@ -7,7 +7,7 @@ import { KineticText } from "@/components/cinematic/KineticText";
 
 export function Hero() {
   return (
-    <section className="relative flex min-h-[200vh] flex-col items-center justify-start px-4 text-center sm:px-6 lg:px-8">
+    <section className="relative flex min-h-screen flex-col items-center justify-start px-4 text-center sm:px-6 lg:min-h-[200vh] lg:px-8">
       {/* Scroll-driven video background (static image on mobile) */}
       <ScrollVideo
         src="/videos/hero.mp4"
@@ -24,7 +24,7 @@ export function Hero() {
         aria-hidden="true"
       />
 
-      <div className="relative z-10 mx-auto max-w-3xl pt-[25vh]">
+      <div className="relative z-10 mx-auto flex max-w-3xl flex-1 flex-col justify-center pt-20 lg:flex-none lg:pt-[25vh]">
         {/* Tagline chip */}
         <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-smoke bg-graphite px-4 py-1.5">
           <span className="royal-dot" />
@@ -74,8 +74,8 @@ export function Hero() {
         </div>
       </div>
 
-      {/* Scroll indicator */}
-      <div className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2">
+      {/* Scroll indicator — only visible on desktop where scroll video is active */}
+      <div className="absolute bottom-8 left-1/2 z-10 hidden -translate-x-1/2 lg:block">
         <div className="flex flex-col items-center gap-2 text-ash/40">
           <span className="text-xs tracking-widest uppercase">Scroll</span>
           <div className="h-8 w-[1px] bg-gradient-to-b from-transparent to-ash/20" />

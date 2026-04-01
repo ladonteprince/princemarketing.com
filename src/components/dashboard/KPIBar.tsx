@@ -66,11 +66,11 @@ export function KPIBar() {
   ];
 
   return (
-    <div className="flex items-center gap-6 border-b border-smoke bg-graphite/80 backdrop-blur-sm px-5 py-2.5">
+    <div className="flex items-center gap-4 overflow-x-auto border-b border-smoke bg-graphite/80 backdrop-blur-sm px-4 py-2.5 sm:gap-6 sm:px-5">
       {items.map((item) => {
         const Icon = item.icon;
         return (
-          <div key={item.label} className="flex items-center gap-2">
+          <div key={item.label} className="flex shrink-0 items-center gap-2">
             <Icon size={14} strokeWidth={1.5} className="text-ash" />
             <span className="font-mono text-sm font-semibold text-cloud">
               {item.value}

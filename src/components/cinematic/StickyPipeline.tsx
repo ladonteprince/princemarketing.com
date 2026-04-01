@@ -81,12 +81,12 @@ export function StickyPipeline() {
         <div
           key={step.number}
           data-step={i}
-          className="sticky border-t border-smoke bg-void"
+          className="lg:sticky border-t border-smoke bg-void"
           style={{ top: `${i * 4}rem` }}
         >
-          <div className="mx-auto grid max-w-6xl gap-8 px-4 py-16 sm:px-6 md:grid-cols-2 md:items-center md:py-24 lg:gap-16 lg:px-8">
-            {/* Text — alternating order */}
-            <div className={i % 2 === 1 ? 'md:order-2' : ''}>
+          <div className="mx-auto grid max-w-6xl gap-8 px-4 py-12 sm:px-6 md:grid-cols-2 md:items-center md:py-24 lg:gap-16 lg:px-8">
+            {/* Text — alternating order on md+ only; on mobile text always comes after image */}
+            <div className={`order-2 md:order-none ${i % 2 === 1 ? 'md:order-2' : ''}`}>
               <span className="mb-4 block font-mono text-xs text-ash/40">
                 {step.number}
               </span>
@@ -103,7 +103,7 @@ export function StickyPipeline() {
 
             {/* Image */}
             <div
-              className={`relative overflow-hidden rounded-xl border border-smoke ${
+              className={`order-1 relative overflow-hidden rounded-xl border border-smoke md:order-none ${
                 i % 2 === 1 ? 'md:order-1' : ''
               }`}
             >

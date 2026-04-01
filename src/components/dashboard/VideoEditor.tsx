@@ -41,7 +41,7 @@ function SceneCard({
   const isLoading = scene.status === "generating" || scene.status === "regenerating";
 
   return (
-    <div className="group relative flex shrink-0 flex-col">
+    <div className="group relative flex min-w-[250px] shrink-0 flex-col">
       {/* Scene number */}
       <div className="mb-2 flex items-center gap-2">
         <span className="text-[10px] font-mono uppercase tracking-wider text-ash">
@@ -184,12 +184,12 @@ function SceneCard({
 
       {/* Trim controls */}
       {showTrim && (
-        <div className="mt-2 w-64 rounded-lg border border-smoke bg-slate/60 p-3">
+        <div className="mt-2 w-full max-w-[264px] rounded-lg border border-smoke bg-slate/60 p-3">
           <div className="flex items-center justify-between text-[10px] text-ash mb-1.5">
             <span>In: {scene.trimStart.toFixed(1)}s</span>
             <span>Out: {scene.trimEnd.toFixed(1)}s</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <input
               type="range"
               min={0}
@@ -364,7 +364,7 @@ export function VideoEditor({ project, onUpdateProject, onClose }: VideoEditorPr
   return (
     <div className="flex flex-col rounded-xl border border-smoke bg-graphite">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-smoke px-5 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-smoke px-4 py-3 sm:px-5">
         <div className="flex items-center gap-3">
           <Film size={18} strokeWidth={1.5} className="text-royal" />
           <div>

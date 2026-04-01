@@ -44,13 +44,13 @@ export function ScrollVideo({ src, poster }: { src: string; poster: string }) {
         poster={poster}
         muted
         playsInline
-        className="hidden h-full w-full object-cover opacity-30 md:block"
+        className="hidden h-full w-full object-cover opacity-30 lg:block"
       >
         <source src={src} type="video/mp4" />
       </video>
       {/* Static fallback for mobile */}
       <div
-        className="h-full w-full bg-cover bg-center opacity-30 md:hidden"
+        className="h-full w-full bg-cover bg-center opacity-30 lg:hidden"
         style={{ backgroundImage: `url(${poster})` }}
       />
     </div>
