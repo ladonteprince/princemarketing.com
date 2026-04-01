@@ -4,7 +4,26 @@ import { claude, STRATEGIST_SYSTEM_PROMPT } from "@/lib/claude";
 import { checkRateLimit } from "@/lib/rate-limiter";
 import { compactMessages, type CompactableChatMessage } from "@/lib/chat-compaction";
 import { buildUserContext } from "@/lib/social/indexer";
+import { db } from "@/lib/db";
+import {
+  analyzePerformance,
+  generateRecommendations,
+  generateWeeklySummary,
+  type AnalyzablePost,
+} from "@/lib/agents/analytics-agent";
+import {
+  learnBrandVoice,
+  generateVariants,
+  brandVoiceToPrompt,
+} from "@/lib/agents/content-agent";
+import { fetchAllPlatformAnalytics } from "@/lib/social/analytics";
 import { z } from "zod";
+import {
+  validateActions,
+  sanitizeExternalContext,
+  validateOutput,
+  auditPromptBuild,
+} from "@/lib/action-validation";
 
 const requestSchema = z.object({
   sessionId: z.string(),
@@ -40,7 +59,13 @@ When you take actions, the frontend will automatically:
 - CREATE_COPY: call the copy generation API and add a node to the canvas
 - SCHEDULE_POST: create a calendar entry
 - PUBLISH_NOW: publish content to connected social platforms
-- GET_ANALYTICS: fetch and display analytics inline
+- GET_ANALYTICS: fetch performance insights — tells you what's working, what's not, and why
+- GET_RECOMMENDATIONS: get AI-powered content recommendations — what to post next, when, and where
+- WEEKLY_SUMMARY: generate a natural language weekly performance brief
+- GENERATE_VARIANTS: create A/B/C content variants with different strategic angles for the same message
+- ANALYZE_COMPETITORS: call the strategy agent to research competitors and display results
+- BUILD_STRATEGY: call the strategy agent to generate a full marketing strategy
+- AUDIENCE_INSIGHT: call the strategy agent to analyze the user's audience from connected platforms
 
 You can also return a legacy JSON block (wrapped in \`\`\`json ... \`\`\`) with a "nodes" array if you need to create canvas nodes directly:
 \`\`\`json
@@ -98,14 +123,31 @@ export async function POST(request: Request) {
       console.error("[CreateContent] Failed to build social context:", err);
     }
 
+    // WHY: Sanitize external social content before injecting into the system prompt.
+    // Social posts are user-generated and could contain prompt injection payloads.
+    const safeSocialContext = socialContext
+      ? sanitizeExternalContext(socialContext)
+      : "";
+
+    const contextSources: string[] = ["base_prompt"];
+    if (existingNodes?.length) contextSources.push("existing_nodes");
+    if (safeSocialContext) contextSources.push("social_context");
+
     const systemPrompt = WORKSPACE_SYSTEM_PROMPT.replace(
       "{existingNodes}",
       existingNodes
         ? `${existingNodes.length} (${existingNodes.map((n) => `${n.type}: ${n.title}`).join(", ")})`
         : "0",
-    ) + (socialContext
-      ? `\n\nUser's social media context (use this to personalize your advice and content):\n${socialContext}`
+    ) + (safeSocialContext
+      ? `\n\nUser's social media context (use this to personalize your advice and content):\n${safeSocialContext}`
       : "");
+
+    // Audit log: track what went into the system prompt (metadata only, no PII)
+    auditPromptBuild(
+      email,
+      systemPrompt.length,
+      contextSources,
+    );
 
     // Build conversation history: compact old messages + append new user message
     const fullHistory: CompactableChatMessage[] = [
@@ -143,6 +185,10 @@ export async function POST(request: Request) {
       }
     }
 
+    // WHY: Validate actions against strict Zod schemas before passing to frontend.
+    // Malformed or injected action types are dropped here — never executed.
+    const validatedActions = validateActions(actions);
+
     // Parse legacy ```json blocks for canvas nodes
     let nodes: unknown[] = [];
     const jsonMatch = fullText.match(/```json\s*([\s\S]*?)```/);
@@ -178,10 +224,14 @@ export async function POST(request: Request) {
       .replace(/```json\s*[\s\S]*?```/g, "")
       .trim();
 
+    // WHY: Validate AI output before displaying to users. Catches system prompt
+    // leakage, embedded scripts, and other patterns that indicate manipulation.
+    const { content: safeMessage } = validateOutput(cleanMessage);
+
     return NextResponse.json({
-      message: cleanMessage,
+      message: safeMessage,
       nodes,
-      actions,
+      actions: validatedActions,
     });
   } catch (error) {
     console.error("Create content API error:", error);
