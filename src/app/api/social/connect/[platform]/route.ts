@@ -50,6 +50,11 @@ export async function GET(
     authUrl.searchParams.set("response_type", "code");
     authUrl.searchParams.set("state", state);
 
+    // Facebook Business Login requires config_id for configured permissions
+    if ("configId" in config && config.configId) {
+      authUrl.searchParams.set("config_id", config.configId as string);
+    }
+
     // Twitter uses PKCE
     if (platform === "twitter") {
       authUrl.searchParams.set("code_challenge", state);

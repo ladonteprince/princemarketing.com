@@ -4,11 +4,12 @@
 export const PLATFORMS = {
   instagram: {
     name: "Instagram",
-    // WHY: Instagram Business Login goes through Facebook's OAuth dialog, not instagram.com.
-    // The old instagram.com/oauth/authorize is the deprecated Basic Display API.
+    // WHY: Instagram Business Login goes through Facebook's OAuth dialog with a config_id
+    // that specifies which permissions are allowed. Config created in Meta Developer Console.
     authUrl: "https://www.facebook.com/v19.0/dialog/oauth",
     tokenUrl: "https://graph.facebook.com/v19.0/oauth/access_token",
-    scopes: ["instagram_business_basic", "instagram_business_content_publish", "instagram_business_manage_comments", "pages_show_list", "pages_read_engagement"],
+    scopes: ["instagram_manage_comments", "pages_show_list", "pages_read_engagement"],
+    configId: "940418525511002",
     icon: "Instagram",
     envPrefix: "INSTAGRAM",
     dbType: "INSTAGRAM" as const,
