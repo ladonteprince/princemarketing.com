@@ -39,14 +39,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await princeAPI.generateImage(parsed.data);
+    const result = await princeAPI.generateImage(parsed.data) as Record<string, unknown>;
     // Unwrap .ai's { type: "success", data: { imageUrl } } envelope
-    const imageData = result?.data ?? result;
+    const inner = (result?.data ?? result) as Record<string, unknown>;
     return NextResponse.json({
-      imageUrl: imageData.imageUrl ?? imageData.resultUrl,
-      url: imageData.imageUrl ?? imageData.resultUrl,
-      refinedPrompt: imageData.refinedPrompt,
-      score: imageData.score,
+      imageUrl: inner.imageUrl ?? inner.resultUrl ?? result.resultUrl,
+      url: inner.imageUrl ?? inner.resultUrl ?? result.resultUrl,
+      refinedPrompt: inner.refinedPrompt,
+      score: inner.score,
     });
   } catch (error) {
     const message =
