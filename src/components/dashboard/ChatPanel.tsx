@@ -92,7 +92,10 @@ async function executeAction(
           }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Image generation failed");
+        if (!res.ok) {
+          const errMsg = typeof data.error === "string" ? data.error : data.error?.message ?? "Image generation failed";
+          throw new Error(errMsg);
+        }
 
         const id = crypto.randomUUID();
         let yPos = 60;
@@ -104,7 +107,7 @@ async function executeAction(
           id,
           type: "image",
           title: action.prompt?.slice(0, 50) ?? "Generated Image",
-          thumbnail: data.url ?? data.imageUrl,
+          thumbnail: data.url ?? data.imageUrl ?? data.data?.imageUrl,
           status: "draft",
           prompt: action.prompt,
           createdAt: new Date().toISOString(),
