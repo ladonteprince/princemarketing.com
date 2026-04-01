@@ -69,6 +69,17 @@ export async function GET(
       tokenBody.code_verifier = state;
     }
 
+    // TikTok uses client_key, code_verifier from cookie, and different body format
+    if (platform === "tiktok") {
+      tokenBody.client_key = clientId;
+      tokenBody.client_secret = clientSecret;
+      // Retrieve PKCE code verifier from cookie
+      const verifierMatch = cookies.match(new RegExp(`oauth_verifier_${platform}=([^;]+)`));
+      if (verifierMatch?.[1]) {
+        tokenBody.code_verifier = verifierMatch[1];
+      }
+    }
+
     // All OAuth2 token endpoints accept x-www-form-urlencoded (the spec standard).
     // Instagram and LinkedIn reject JSON; Twitter needs Basic auth header.
     const headers: Record<string, string> = {
@@ -112,6 +123,12 @@ export async function GET(
         });
         const meData = await meRes.json();
         accountName = (meData.name as string) ?? config.name;
+      } else if (platform === "tiktok") {
+        const meRes = await fetch("https://open.tiktokapis.com/v2/user/info/?fields=display_name,username", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const meData = await meRes.json();
+        accountName = `@${(meData.data?.user?.username as string) ?? (meData.data?.user?.display_name as string) ?? "tiktok"}`;
       }
     } catch {
       // Keep default name
@@ -126,6 +143,7 @@ export async function GET(
 
     const response = NextResponse.redirect(`${BASE()}/dashboard/settings?connected=${platform}`);
     response.cookies.delete(`oauth_state_${platform}`);
+    response.cookies.delete(`oauth_verifier_${platform}`);
     return response;
   } catch (error) {
     console.error("Social callback error:", error);

@@ -181,11 +181,17 @@ async function publishToLinkedin({ content, accessToken }: PublishParams): Promi
   }
 }
 
+async function publishToTiktok({ content }: PublishParams): Promise<PublishResult> {
+  // TikTok Content Posting API requires video upload — text-only posts not supported
+  return { success: false, error: "TikTok publishing requires video content. Use the TikTok video upload API." };
+}
+
 const publishers: Record<PlatformKey, (params: PublishParams) => Promise<PublishResult>> = {
   facebook: publishToFacebook,
   instagram: publishToInstagram,
   twitter: publishToTwitter,
   linkedin: publishToLinkedin,
+  tiktok: publishToTiktok,
 };
 
 export async function publishToplatform(

@@ -41,6 +41,16 @@ export const PLATFORMS = {
     envPrefix: "LINKEDIN",
     dbType: "LINKEDIN" as const,
   },
+  tiktok: {
+    name: "TikTok",
+    // TikTok Login Kit uses OAuth2 with PKCE
+    authUrl: "https://www.tiktok.com/v2/auth/authorize/",
+    tokenUrl: "https://open.tiktokapis.com/v2/oauth/token/",
+    scopes: ["user.info.basic", "video.publish", "video.list"],
+    icon: "Music2",
+    envPrefix: "TIKTOK",
+    dbType: "TIKTOK" as const,
+  },
 } as const;
 
 export type PlatformKey = keyof typeof PLATFORMS;

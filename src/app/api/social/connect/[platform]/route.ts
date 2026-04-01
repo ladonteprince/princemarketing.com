@@ -44,7 +44,8 @@ export async function GET(
     const scope = config.scopes.join(scopeSeparator);
 
     const authUrl = new URL(config.authUrl);
-    authUrl.searchParams.set("client_id", clientId);
+    // TikTok uses client_key instead of client_id
+    authUrl.searchParams.set(platform === "tiktok" ? "client_key" : "client_id", clientId);
     authUrl.searchParams.set("redirect_uri", redirectUri);
     authUrl.searchParams.set("scope", scope);
     authUrl.searchParams.set("response_type", "code");
@@ -59,6 +60,31 @@ export async function GET(
     if (platform === "twitter") {
       authUrl.searchParams.set("code_challenge", state);
       authUrl.searchParams.set("code_challenge_method", "plain");
+    }
+
+    // TikTok uses PKCE with S256
+    if (platform === "tiktok") {
+      const codeVerifier = crypto.randomBytes(32).toString("hex");
+      const codeChallenge = crypto.createHash("sha256").update(codeVerifier).digest("base64url");
+      authUrl.searchParams.set("code_challenge", codeChallenge);
+      authUrl.searchParams.set("code_challenge_method", "S256");
+      // Store code_verifier for token exchange
+      const response = NextResponse.redirect(authUrl.toString());
+      response.cookies.set(`oauth_state_${platform}`, state, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 600,
+        path: "/",
+      });
+      response.cookies.set(`oauth_verifier_${platform}`, codeVerifier, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 600,
+        path: "/",
+      });
+      return response;
     }
 
     // Store state in a cookie for CSRF verification
