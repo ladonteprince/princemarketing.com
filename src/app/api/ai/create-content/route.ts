@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { claude, STRATEGIST_SYSTEM_PROMPT } from "@/lib/claude";
 import { checkRateLimit } from "@/lib/rate-limiter";
 import { compactMessages, type CompactableChatMessage } from "@/lib/chat-compaction";
+import { buildUserContext } from "@/lib/social/indexer";
 import { z } from "zod";
 
 const requestSchema = z.object({
@@ -88,12 +89,23 @@ export async function POST(request: Request) {
 
     const { message, history, existingNodes } = parsed.data;
 
+    // WHY: Inject the user's social media context so the AI can give personalized advice.
+    // e.g. "Based on your recent Instagram posts about sneakers..." instead of generic tips.
+    let socialContext = "";
+    try {
+      socialContext = await buildUserContext(session.user.id ?? "");
+    } catch (err) {
+      console.error("[CreateContent] Failed to build social context:", err);
+    }
+
     const systemPrompt = WORKSPACE_SYSTEM_PROMPT.replace(
       "{existingNodes}",
       existingNodes
         ? `${existingNodes.length} (${existingNodes.map((n) => `${n.type}: ${n.title}`).join(", ")})`
         : "0",
-    );
+    ) + (socialContext
+      ? `\n\nUser's social media context (use this to personalize your advice and content):\n${socialContext}`
+      : "");
 
     // Build conversation history: compact old messages + append new user message
     const fullHistory: CompactableChatMessage[] = [

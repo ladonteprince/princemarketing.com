@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Header } from "@/components/layout/Header";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { CampaignWizard } from "@/components/dashboard/CampaignWizard";
 import { Plus, MoreHorizontal, Target, Calendar, Megaphone } from "lucide-react";
 import type { CampaignStatus } from "@/types/campaign";
 
@@ -38,23 +39,25 @@ function formatDateRange(start: string | null, end: string | null): string {
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showWizard, setShowWizard] = useState(false);
+
+  const fetchCampaigns = useCallback(async () => {
+    try {
+      const res = await fetch("/api/campaigns");
+      if (res.ok) {
+        const data = await res.json();
+        setCampaigns(data.campaigns ?? []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch campaigns:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function fetchCampaigns() {
-      try {
-        const res = await fetch("/api/campaigns");
-        if (res.ok) {
-          const data = await res.json();
-          setCampaigns(data.campaigns ?? []);
-        }
-      } catch (err) {
-        console.error("Failed to fetch campaigns:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
     fetchCampaigns();
-  }, []);
+  }, [fetchCampaigns]);
 
   const activeCampaigns = campaigns.filter((c) => c.status === "ACTIVE");
 
@@ -72,15 +75,18 @@ export default function CampaignsPage() {
             <Badge variant="royal">{activeCampaigns.length} active</Badge>
             <Badge>{campaigns.length} total</Badge>
           </div>
-          <button className="
-            flex items-center gap-2 rounded-lg
-            bg-gradient-to-r from-royal to-royal-hover
-            px-4 py-2.5 text-sm font-semibold text-white
-            shadow-md shadow-royal/25
-            hover:shadow-lg hover:shadow-royal/30 hover:brightness-110
-            active:scale-[0.98]
-            transition-all duration-200 cursor-pointer
-          ">
+          <button
+            onClick={() => setShowWizard(true)}
+            className="
+              flex items-center gap-2 rounded-lg
+              bg-gradient-to-r from-royal to-royal-hover
+              px-4 py-2.5 text-sm font-semibold text-white
+              shadow-md shadow-royal/25
+              hover:shadow-lg hover:shadow-royal/30 hover:brightness-110
+              active:scale-[0.98]
+              transition-all duration-200 cursor-pointer
+            "
+          >
             <Plus size={16} strokeWidth={2} />
             New campaign
           </button>
@@ -109,15 +115,18 @@ export default function CampaignsPage() {
             <p className="mb-6 max-w-sm text-center text-sm leading-relaxed text-ash">
               Campaigns organize your content around clear marketing goals. Launch your first one to get started.
             </p>
-            <button className="
-              flex items-center gap-2 rounded-lg
-              bg-gradient-to-r from-royal to-royal-hover
-              px-5 py-2.5 text-sm font-semibold text-white
-              shadow-md shadow-royal/25
-              hover:shadow-lg hover:shadow-royal/30 hover:brightness-110
-              active:scale-[0.98]
-              transition-all duration-200 cursor-pointer
-            ">
+            <button
+              onClick={() => setShowWizard(true)}
+              className="
+                flex items-center gap-2 rounded-lg
+                bg-gradient-to-r from-royal to-royal-hover
+                px-5 py-2.5 text-sm font-semibold text-white
+                shadow-md shadow-royal/25
+                hover:shadow-lg hover:shadow-royal/30 hover:brightness-110
+                active:scale-[0.98]
+                transition-all duration-200 cursor-pointer
+              "
+            >
               <Plus size={16} strokeWidth={2} />
               Create your first campaign
             </button>
@@ -179,6 +188,13 @@ export default function CampaignsPage() {
           </div>
         )}
       </div>
+
+      {showWizard && (
+        <CampaignWizard
+          onClose={() => setShowWizard(false)}
+          onCreated={() => fetchCampaigns()}
+        />
+      )}
     </div>
   );
 }

@@ -146,6 +146,21 @@ async function executeAction(
         // Always open the video editor for the new project
         onCanvasAction({ type: "open-video-editor", videoProjectId });
 
+        // Dispatch add-video-scene actions so scenes appear in the Video Editor immediately
+        if (action.scenes && action.scenes.length > 0) {
+          for (const scene of action.scenes) {
+            onCanvasAction({
+              type: "add-video-scene",
+              videoProjectId,
+              scene: {
+                prompt: scene.prompt,
+                mode: (action.mode as "t2v" | "i2v" | "character" | "extend") ?? "t2v",
+                duration: scene.duration ?? 5,
+              },
+            });
+          }
+        }
+
         // Trigger video generation and stream progress via SSE
         if (action.prompt) {
           // Detect video generation mode from action data

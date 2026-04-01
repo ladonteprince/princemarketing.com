@@ -51,6 +51,7 @@ export async function POST(request: Request) {
         name: parsed.data.name,
         description: parsed.data.description,
         goal: parsed.data.goal,
+        status: parsed.data.status ?? "DRAFT",
         startDate: parsed.data.startDate
           ? new Date(parsed.data.startDate)
           : undefined,

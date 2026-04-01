@@ -40,6 +40,18 @@ type ConnectedPlatform = {
   connected: boolean;
 };
 
+type PlatformAccount = {
+  id: string;
+  name: string;
+  type: "page" | "channel" | "property" | "account";
+  pictureUrl?: string;
+};
+
+type PlatformAccountsMap = Record<
+  string,
+  { accounts: PlatformAccount[]; selectedAccountId: string | null }
+>;
+
 const PLATFORM_ICONS: Record<string, LucideIcon> = {
   INSTAGRAM: Instagram,
   FACEBOOK: Facebook,
@@ -93,6 +105,8 @@ function SettingsPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
+  const [platformAccounts, setPlatformAccounts] = useState<PlatformAccountsMap>({});
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
 
   // Form state
   const [name, setName] = useState("");
@@ -145,6 +159,33 @@ function SettingsPageContent() {
       if (platformsRes.ok) {
         const { platforms: p } = await platformsRes.json();
         setPlatforms(p);
+
+        // WHY: Fetch available accounts/pages for connected platforms so users
+        // can pick which Page/Channel/Property to use for publishing.
+        const hasConnected = p.some(
+          (plat: ConnectedPlatform) => plat.connected,
+        );
+        if (hasConnected) {
+          setLoadingAccounts(true);
+          try {
+            const accountsRes = await fetch("/api/user/platform-accounts");
+            if (accountsRes.ok) {
+              const { platformAccounts: pa } = await accountsRes.json();
+              const map: PlatformAccountsMap = {};
+              for (const entry of pa) {
+                map[entry.platform] = {
+                  accounts: entry.accounts,
+                  selectedAccountId: entry.selectedAccountId,
+                };
+              }
+              setPlatformAccounts(map);
+            }
+          } catch {
+            // Non-critical — selector just won't appear
+          } finally {
+            setLoadingAccounts(false);
+          }
+        }
       }
     } catch {
       setError("Failed to load settings. Please refresh the page.");
@@ -319,42 +360,85 @@ function SettingsPageContent() {
                 );
                 const platformKey = PLATFORM_KEYS[platform.type];
 
+                const accountData = platformAccounts[platform.type];
+                const hasMultipleAccounts =
+                  accountData && accountData.accounts.length > 1;
+
                 return (
                   <div
                     key={platform.type}
-                    className="flex items-center justify-between rounded-lg border border-smoke bg-slate px-4 py-3"
+                    className="rounded-lg border border-smoke bg-slate px-4 py-3"
                   >
-                    <div className="flex items-center gap-3">
-                      <Icon size={18} strokeWidth={1.5} className="text-ash" />
-                      <div>
-                        <p className="text-sm font-medium text-cloud">
-                          {platform.name}
-                        </p>
-                        <p className="text-xs text-ash">
-                          {connected ? connected.accountName : "Not connected"}
-                        </p>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Icon size={18} strokeWidth={1.5} className="text-ash" />
+                        <div>
+                          <p className="text-sm font-medium text-cloud">
+                            {platform.name}
+                          </p>
+                          <p className="text-xs text-ash">
+                            {connected ? connected.accountName : "Not connected"}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    {connected ? (
-                      <div className="flex items-center gap-2">
-                        <Badge variant="mint">Connected</Badge>
+                      {connected ? (
+                        <div className="flex items-center gap-2">
+                          <Badge variant="mint">Connected</Badge>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            loading={disconnecting === platform.type}
+                            onClick={() => handleDisconnect(platform.type)}
+                          >
+                            Disconnect
+                          </Button>
+                        </div>
+                      ) : (
                         <Button
-                          variant="danger"
+                          variant="secondary"
                           size="sm"
-                          loading={disconnecting === platform.type}
-                          onClick={() => handleDisconnect(platform.type)}
+                          onClick={() => handleConnect(platformKey)}
                         >
-                          Disconnect
+                          Connect
                         </Button>
+                      )}
+                    </div>
+
+                    {/* Account/Page selector — shown when platform has multiple accounts */}
+                    {connected && hasMultipleAccounts && (
+                      <div className="mt-2 ml-[30px]">
+                        <label className="block text-xs text-ash mb-1">
+                          Active {accountData.accounts[0]?.type === "page" ? "Page" : accountData.accounts[0]?.type === "channel" ? "Channel" : accountData.accounts[0]?.type === "property" ? "Property" : "Account"}
+                        </label>
+                        <select
+                          className="w-full text-xs bg-slate border border-smoke rounded px-2 py-1.5 text-ash focus:border-royal focus:outline-none"
+                          defaultValue={accountData.selectedAccountId ?? ""}
+                          onChange={(e) => {
+                            // WHY: Update the selected account so publishing targets the right page/channel.
+                            // For now, store in local state. Future: persist via API call.
+                            setPlatformAccounts((prev) => ({
+                              ...prev,
+                              [platform.type]: {
+                                ...prev[platform.type],
+                                selectedAccountId: e.target.value,
+                              },
+                            }));
+                          }}
+                        >
+                          {accountData.accounts.map((acct) => (
+                            <option key={acct.id} value={acct.id}>
+                              {acct.name}
+                            </option>
+                          ))}
+                        </select>
                       </div>
-                    ) : (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleConnect(platformKey)}
-                      >
-                        Connect
-                      </Button>
+                    )}
+
+                    {/* Loading state for accounts */}
+                    {connected && loadingAccounts && !accountData && (
+                      <div className="mt-2 ml-[30px]">
+                        <div className="h-6 w-40 animate-pulse rounded bg-smoke" />
+                      </div>
                     )}
                   </div>
                 );

@@ -13,6 +13,7 @@ export const createCampaignSchema = z.object({
   name: z.string().min(1, "Campaign name is required"),
   description: z.string().optional(),
   goal: z.string().optional(),
+  status: z.enum(campaignStatuses).optional(),
   startDate: z.string().datetime().optional(),
   endDate: z.string().datetime().optional(),
   budget: z.number().positive().optional(),

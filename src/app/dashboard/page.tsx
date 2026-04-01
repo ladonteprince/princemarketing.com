@@ -6,7 +6,9 @@ import { Canvas } from "@/components/dashboard/Canvas";
 import { ChatPanel } from "@/components/dashboard/ChatPanel";
 import { VideoEditor } from "@/components/dashboard/VideoEditor";
 import { KPIBar } from "@/components/dashboard/KPIBar";
-import type { ContentNode, CanvasAction, VideoProject } from "@/types/canvas";
+import { OnboardingChecklist } from "@/components/dashboard/OnboardingChecklist";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import type { ContentNode, CanvasAction, VideoProject, VideoScene } from "@/types/canvas";
 
 export default function DashboardPage() {
   const [nodes, setNodes] = useState<ContentNode[]>([]);
@@ -42,6 +44,44 @@ export default function DashboardPage() {
         case "open-video-editor":
           setActiveVideoProject(action.videoProjectId);
           break;
+        case "add-video-scene": {
+          setVideoProjects((prev) => {
+            const next = new Map(prev);
+            const project = next.get(action.videoProjectId);
+            if (!project) return prev;
+            const newScene: VideoScene = {
+              id: crypto.randomUUID(),
+              prompt: action.scene.prompt,
+              duration: action.scene.duration ?? 5,
+              trimStart: 0,
+              trimEnd: action.scene.duration ?? 5,
+              status: "generating",
+              mode: (action.scene.mode as VideoScene["mode"]) ?? "t2v",
+              referenceImageIds: [],
+              versions: [],
+            };
+            next.set(action.videoProjectId, {
+              ...project,
+              scenes: [...project.scenes, newScene],
+            });
+            return next;
+          });
+          break;
+        }
+        case "set-video-audio": {
+          setVideoProjects((prev) => {
+            const next = new Map(prev);
+            const project = next.get(action.videoProjectId);
+            if (!project) return prev;
+            // Store the audio description; downstream components can use it to generate audio
+            next.set(action.videoProjectId, {
+              ...project,
+              audioUrl: action.audioDescription,
+            });
+            return next;
+          });
+          break;
+        }
       }
     },
     [],
@@ -103,13 +143,18 @@ export default function DashboardPage() {
       {/* Video editor overlay */}
       {activeProject && (
         <div className="border-b border-smoke">
-          <VideoEditor
-            project={activeProject}
-            onUpdateProject={handleUpdateVideoProject}
-            onClose={() => setActiveVideoProject(null)}
-          />
+          <ErrorBoundary>
+            <VideoEditor
+              project={activeProject}
+              onUpdateProject={handleUpdateVideoProject}
+              onClose={() => setActiveVideoProject(null)}
+            />
+          </ErrorBoundary>
         </div>
       )}
+
+      {/* Onboarding checklist for new users */}
+      <OnboardingChecklist nodes={nodes} />
 
       {/* Main split panel: Canvas + Chat */}
       <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
@@ -117,12 +162,14 @@ export default function DashboardPage() {
         <div className="flex-1 min-h-[40vh] lg:min-h-0">
           {/* Spatial canvas for desktop */}
           <div className="hidden h-full lg:block">
-            <Canvas
-              nodes={nodes}
-              onNodeClick={handleNodeClick}
-              onNodeMove={handleNodeMove}
-              onNodeDelete={handleNodeDelete}
-            />
+            <ErrorBoundary>
+              <Canvas
+                nodes={nodes}
+                onNodeClick={handleNodeClick}
+                onNodeMove={handleNodeMove}
+                onNodeDelete={handleNodeDelete}
+              />
+            </ErrorBoundary>
           </div>
           {/* Simplified node list for mobile */}
           <div className="flex h-full flex-col overflow-y-auto bg-void p-4 lg:hidden">
@@ -176,12 +223,14 @@ export default function DashboardPage() {
             ${chatCollapsed ? "lg:w-12" : "lg:w-[30%] lg:min-w-[320px] lg:max-w-[480px]"}
           `}
         >
-          <ChatPanel
-            collapsed={chatCollapsed}
-            onToggle={() => setChatCollapsed((prev) => !prev)}
-            onCanvasAction={handleCanvasAction}
-            nodes={nodes}
-          />
+          <ErrorBoundary>
+            <ChatPanel
+              collapsed={chatCollapsed}
+              onToggle={() => setChatCollapsed((prev) => !prev)}
+              onCanvasAction={handleCanvasAction}
+              nodes={nodes}
+            />
+          </ErrorBoundary>
         </div>
       </div>
     </div>

@@ -61,4 +61,6 @@ export type CanvasAction =
   | { type: "remove-node"; nodeId: string }
   | { type: "connect-nodes"; fromId: string; toId: string }
   | { type: "update-node"; nodeId: string; updates: Partial<ContentNode> }
-  | { type: "open-video-editor"; videoProjectId: string };
+  | { type: "open-video-editor"; videoProjectId: string }
+  | { type: "add-video-scene"; videoProjectId: string; scene: { prompt: string; mode?: VideoSceneMode; duration?: number } }
+  | { type: "set-video-audio"; videoProjectId: string; audioDescription: string };
