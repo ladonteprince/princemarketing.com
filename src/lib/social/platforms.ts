@@ -4,9 +4,10 @@
 export const PLATFORMS = {
   instagram: {
     name: "Instagram",
-    // WHY: Instagram Business Login flow — the general Instagram API returns "Invalid platform app"
-    authUrl: "https://www.instagram.com/oauth/authorize",
-    tokenUrl: "https://api.instagram.com/oauth/access_token",
+    // WHY: Instagram Business Login goes through Facebook's OAuth dialog, not instagram.com.
+    // The old instagram.com/oauth/authorize is the deprecated Basic Display API.
+    authUrl: "https://www.facebook.com/v19.0/dialog/oauth",
+    tokenUrl: "https://graph.facebook.com/v19.0/oauth/access_token",
     scopes: ["instagram_basic", "instagram_content_publish", "pages_show_list"],
     icon: "Instagram",
     envPrefix: "INSTAGRAM",
