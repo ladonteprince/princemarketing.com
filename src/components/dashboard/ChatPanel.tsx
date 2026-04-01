@@ -34,6 +34,8 @@ type ActionStatus = {
   label: string;
   status: "pending" | "running" | "done" | "error";
   detail?: string;
+  progress?: number; // 0-100 for progress bar
+  stage?: string;    // Current stage name for display
 };
 
 type AgentAction = {
@@ -64,12 +66,16 @@ const INITIAL_MESSAGE: Message = {
     "I am your marketing command center. Tell me what to do and I will execute it.\n\nI can create images, videos, copy, schedule posts, publish to your socials, and pull analytics. Try:\n\n- \"Create a product photo for my sneaker launch\"\n- \"Schedule an Instagram post for tomorrow at 9am\"\n- \"Show me this week's analytics\"\n- \"Plan a 30-second ad for Instagram\"",
 };
 
+type StatusUpdate = { progress?: number; stage?: string; detail?: string };
+
 // WHY: Execute agentic actions returned by Claude against the platform APIs.
 // Each action type maps to a specific API call and canvas operation.
+// statusCallback provides real-time progress for long-running actions (SSE streaming).
 async function executeAction(
   action: AgentAction,
   onCanvasAction: (action: CanvasAction) => void,
   nodes: ContentNode[],
+  statusCallback?: (update: StatusUpdate) => void,
 ): Promise<{ success: boolean; detail: string; nodeRef?: string }> {
   switch (action.action) {
     case "CREATE_IMAGE": {
@@ -131,16 +137,66 @@ async function executeAction(
         };
         onCanvasAction({ type: "add-node", node });
 
-        // If scenes were provided, trigger video generation
-        if (action.scenes && action.scenes.length > 0) {
-          await fetch("/api/generate/video", {
+        // Trigger video generation and stream progress via SSE
+        if (action.prompt) {
+          const res = await fetch("/api/generate/video", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              projectId: videoProjectId,
-              scenes: action.scenes,
+              prompt: action.prompt,
+              duration: action.scenes?.[0]?.duration ?? 5,
+              aspectRatio: "16:9",
             }),
           });
+          const data = await res.json();
+
+          if (res.ok && data.generationId) {
+            // Open SSE stream for real-time progress
+            const { streamGeneration } = await import("@/lib/api");
+
+            return new Promise((resolve) => {
+              const cancel = streamGeneration(data.generationId, {
+                onProgress: (event) => {
+                  // Update via the statusCallback if provided
+                  if (statusCallback) {
+                    statusCallback({
+                      progress: event.data.progress,
+                      stage: event.data.stage,
+                      detail: event.data.message,
+                    });
+                  }
+                },
+                onCompleted: (event) => {
+                  resolve({
+                    success: true,
+                    detail: `Video ready — scored ${event.data.score?.toFixed(1) ?? "?"}/10`,
+                    nodeRef: id,
+                  });
+                },
+                onFailed: (event) => {
+                  resolve({
+                    success: false,
+                    detail: event.data.error ?? "Video generation failed",
+                  });
+                },
+                onError: (error) => {
+                  resolve({
+                    success: false,
+                    detail: error.message,
+                  });
+                },
+              });
+
+              // Safety timeout: cancel SSE after 30 minutes
+              setTimeout(() => {
+                cancel();
+                resolve({
+                  success: false,
+                  detail: "Video generation timed out",
+                });
+              }, 30 * 60 * 1000);
+            });
+          }
         }
 
         onCanvasAction({ type: "open-video-editor", videoProjectId });
@@ -343,10 +399,23 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
           ),
         );
 
-        const result = await executeAction(agentActions[i], onCanvasAction, nodes);
+        // Progress callback for SSE-streamed actions (video generation)
+        const statusCallback = (update: StatusUpdate) => {
+          statuses[i].progress = update.progress;
+          statuses[i].stage = update.stage;
+          if (update.detail) statuses[i].detail = update.detail;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === messageId ? { ...m, actionStatuses: [...statuses] } : m,
+            ),
+          );
+        };
+
+        const result = await executeAction(agentActions[i], onCanvasAction, nodes, statusCallback);
 
         statuses[i].status = result.success ? "done" : "error";
         statuses[i].detail = result.detail;
+        statuses[i].progress = undefined; // Clear progress bar on completion
         if (result.nodeRef) allNodeRefs.push(result.nodeRef);
 
         setMessages((prev) =>
@@ -579,25 +648,39 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
                   {msg.actionStatuses.map((as, i) => {
                     const actionMeta = ACTION_LABELS[as.action];
                     const Icon = actionMeta?.icon ?? FileText;
+                    const hasProgress = as.status === "running" && as.progress != null && as.progress > 0;
                     return (
-                      <div
-                        key={i}
-                        className="flex items-center gap-2 rounded-lg bg-slate/40 px-3 py-1.5 text-xs"
-                      >
-                        {as.status === "running" ? (
-                          <Loader2 size={12} className="animate-spin text-royal" />
-                        ) : as.status === "done" ? (
-                          <Check size={12} className="text-emerald-400" />
-                        ) : as.status === "error" ? (
-                          <AlertCircle size={12} className="text-coral" />
-                        ) : (
-                          <Icon size={12} className="text-ash" />
+                      <div key={i} className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2 rounded-lg bg-slate/40 px-3 py-1.5 text-xs">
+                          {as.status === "running" ? (
+                            <Loader2 size={12} className="animate-spin text-royal" />
+                          ) : as.status === "done" ? (
+                            <Check size={12} className="text-emerald-400" />
+                          ) : as.status === "error" ? (
+                            <AlertCircle size={12} className="text-coral" />
+                          ) : (
+                            <Icon size={12} className="text-ash" />
+                          )}
+                          <span className={`flex-1 ${as.status === "done" ? "text-cloud" : as.status === "error" ? "text-coral" : "text-ash"}`}>
+                            {as.status === "done" || as.status === "error"
+                              ? as.detail ?? as.label
+                              : as.stage
+                                ? `${as.stage}...`
+                                : `${as.label}...`}
+                          </span>
+                          {hasProgress && (
+                            <span className="text-[10px] tabular-nums text-ash/70">{as.progress}%</span>
+                          )}
+                        </div>
+                        {/* Progress bar for SSE-streamed actions */}
+                        {hasProgress && (
+                          <div className="mx-3 h-1 overflow-hidden rounded-full bg-slate/60">
+                            <div
+                              className="h-full rounded-full bg-royal transition-all duration-500 ease-out"
+                              style={{ width: `${as.progress}%` }}
+                            />
+                          </div>
                         )}
-                        <span className={`${as.status === "done" ? "text-cloud" : as.status === "error" ? "text-coral" : "text-ash"}`}>
-                          {as.status === "done" || as.status === "error"
-                            ? as.detail ?? as.label
-                            : `${as.label}...`}
-                        </span>
                       </div>
                     );
                   })}

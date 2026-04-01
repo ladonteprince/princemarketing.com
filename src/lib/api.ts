@@ -92,3 +92,125 @@ export async function streamChat(
 
   onDone();
 }
+
+// ─── Generation SSE Stream ─────────────────────────────────────────────────
+// WHY: Real-time progress for video/image generation instead of polling.
+// Opens an SSE connection, fires callbacks on each event, auto-closes on completion.
+
+export type GenerationStreamEvent = {
+  type:
+    | "status_change"
+    | "progress"
+    | "scoring"
+    | "completed"
+    | "failed"
+    | "heartbeat";
+  generationId: string;
+  timestamp: string;
+  data: {
+    status?: string;
+    previousStatus?: string;
+    progress?: number;
+    stage?: string;
+    message?: string;
+    resultUrl?: string;
+    score?: number;
+    feedback?: string;
+    error?: string;
+    model?: string;
+    predictionId?: string;
+    durationMs?: number;
+  };
+};
+
+export type StreamCallbacks = {
+  onProgress?: (event: GenerationStreamEvent) => void;
+  onStatusChange?: (event: GenerationStreamEvent) => void;
+  onScoring?: (event: GenerationStreamEvent) => void;
+  onCompleted?: (event: GenerationStreamEvent) => void;
+  onFailed?: (event: GenerationStreamEvent) => void;
+  onError?: (error: Error) => void;
+};
+
+export function streamGeneration(
+  generationId: string,
+  callbacks: StreamCallbacks,
+): () => void {
+  const abortController = new AbortController();
+
+  (async () => {
+    try {
+      const response = await fetch(`${BASE_URL}/stream/${generationId}`, {
+        headers: { Accept: "text/event-stream" },
+        signal: abortController.signal,
+      });
+
+      if (!response.ok || !response.body) {
+        callbacks.onError?.(
+          new Error(`Stream connection failed (${response.status})`),
+        );
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? ""; // Keep incomplete line in buffer
+
+        let currentEventType = "";
+
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            currentEventType = line.slice(7).trim();
+            if (currentEventType === "done") return; // Stream complete
+            continue;
+          }
+
+          if (line.startsWith("data: ") && currentEventType) {
+            try {
+              const event = JSON.parse(line.slice(6)) as GenerationStreamEvent;
+
+              switch (event.type) {
+                case "progress":
+                  callbacks.onProgress?.(event);
+                  break;
+                case "status_change":
+                  callbacks.onStatusChange?.(event);
+                  break;
+                case "scoring":
+                  callbacks.onScoring?.(event);
+                  break;
+                case "completed":
+                  callbacks.onCompleted?.(event);
+                  return; // Done
+                case "failed":
+                  callbacks.onFailed?.(event);
+                  return; // Done
+                case "heartbeat":
+                  break; // Ignore heartbeats
+              }
+            } catch {
+              // Ignore malformed JSON lines
+            }
+          }
+        }
+      }
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        callbacks.onError?.(
+          err instanceof Error ? err : new Error("Stream error"),
+        );
+      }
+    }
+  })();
+
+  // Return cancel function
+  return () => abortController.abort();
+}
