@@ -15,16 +15,16 @@ const FEATURES = [
     title: "Content Agent",
     description:
       "Creates scroll-stopping posts, captions, and visuals in your brand voice. Every piece is on-strategy and ready to publish across platforms.",
-    image: "/images/feature-content.png",
-    alt: "AI Content Agent creating branded social media posts and visual content",
+    image: "/images/feature-create.png",
+    alt: "AI Content Agent creating branded social media posts, email copy, and video content",
   },
   {
     icon: BarChart3,
     title: "Analytics Agent",
     description:
       "Tracks what is working, what is not, and why. Adjusts your strategy in real time so every post performs better than the last.",
-    image: "/images/feature-analytics.png",
-    alt: "AI Analytics Agent displaying performance dashboards and actionable insights",
+    image: "/images/feature-kpi.png",
+    alt: "AI Analytics Agent displaying A/B testing dashboards and KPI insights",
   },
 ] as const;
 
@@ -34,7 +34,7 @@ export function Features() {
       id="features"
       className="border-t border-smoke px-4 py-16 sm:px-6 sm:py-24 lg:px-8"
     >
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto max-w-6xl">
         <p className="mb-4 text-center text-sm font-medium uppercase tracking-wider text-royal">
           Your AI team
         </p>
@@ -46,40 +46,53 @@ export function Features() {
           together so your marketing never stops improving.
         </p>
 
-        <div className="grid gap-8 md:grid-cols-3">
-          {FEATURES.map((feature) => {
+        {/* Cinematic full-width cards */}
+        <div className="flex flex-col gap-8">
+          {FEATURES.map((feature, i) => {
             const Icon = feature.icon;
             return (
               <div
                 key={feature.title}
-                className="group overflow-hidden rounded-xl border border-smoke bg-graphite transition-colors hover:border-royal/30"
+                className="group relative overflow-hidden rounded-2xl border border-smoke bg-graphite"
               >
-                {/* Feature image */}
-                <div className="relative aspect-[4/3] w-full overflow-hidden border-b border-smoke">
-                  <Image
-                    src={feature.image}
-                    alt={feature.alt}
-                    width={600}
-                    height={450}
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-                  />
-                </div>
-
-                {/* Feature text */}
-                <div className="p-6">
-                  <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg border border-smoke bg-slate">
-                    <Icon
-                      size={20}
-                      strokeWidth={1.5}
-                      className="text-royal"
+                <div
+                  className={`grid gap-0 md:grid-cols-2 ${
+                    i % 2 === 1 ? 'md:[direction:rtl]' : ''
+                  }`}
+                >
+                  {/* Image — full width on mobile, half on desktop */}
+                  <div className="relative aspect-[16/10] w-full overflow-hidden md:aspect-auto md:min-h-[360px]">
+                    <Image
+                      src={feature.image}
+                      alt={feature.alt}
+                      width={800}
+                      height={500}
+                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
                     />
+                    {/* Gradient overlay for text readability on mobile */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-graphite/80 via-transparent to-transparent md:hidden" />
                   </div>
-                  <h3 className="mb-2 text-lg font-semibold text-cloud">
-                    {feature.title}
-                  </h3>
-                  <p className="text-sm leading-relaxed text-ash">
-                    {feature.description}
-                  </p>
+
+                  {/* Text */}
+                  <div
+                    className={`flex flex-col justify-center p-8 md:p-12 ${
+                      i % 2 === 1 ? 'md:[direction:ltr]' : ''
+                    }`}
+                  >
+                    <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-smoke bg-slate">
+                      <Icon
+                        size={24}
+                        strokeWidth={1.5}
+                        className="text-royal"
+                      />
+                    </div>
+                    <h3 className="mb-3 text-2xl font-bold text-cloud">
+                      {feature.title}
+                    </h3>
+                    <p className="max-w-md text-base leading-relaxed text-ash">
+                      {feature.description}
+                    </p>
+                  </div>
                 </div>
               </div>
             );

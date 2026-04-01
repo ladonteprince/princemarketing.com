@@ -142,3 +142,10 @@ body {
   transform: translateY(0);
   transition: opacity var(--transition-page), transform var(--transition-page);
 }
+
+/* === Cinematic Sticky Pipeline === */
+/* Ensures each sticky section has a solid background to cover the one behind */
+[data-step] {
+  min-height: 100vh;
+  z-index: 1;
+}
