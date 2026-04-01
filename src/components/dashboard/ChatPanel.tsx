@@ -50,6 +50,9 @@ type AgentAction = {
   platforms?: string[];
   scheduledAt?: string;
   period?: string;
+  mode?: string;
+  sourceImage?: string;
+  sourceVideo?: string;
 };
 
 type ChatPanelProps = {
@@ -139,14 +142,25 @@ async function executeAction(
 
         // Trigger video generation and stream progress via SSE
         if (action.prompt) {
+          // Detect video generation mode from action data
+          const videoMode = action.mode
+            ?? (action.sourceImage ? 'i2v' : undefined)
+            ?? (action.sourceVideo ? 'extend' : undefined)
+            ?? 't2v';
+
+          const videoPayload: Record<string, unknown> = {
+            prompt: action.prompt,
+            duration: action.scenes?.[0]?.duration ?? 5,
+            aspectRatio: "16:9",
+            mode: videoMode,
+          };
+          if (action.sourceImage) videoPayload.sourceImage = action.sourceImage;
+          if (action.sourceVideo) videoPayload.sourceVideo = action.sourceVideo;
+
           const res = await fetch("/api/generate/video", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              prompt: action.prompt,
-              duration: action.scenes?.[0]?.duration ?? 5,
-              aspectRatio: "16:9",
-            }),
+            body: JSON.stringify(videoPayload),
           });
           const data = await res.json();
 
@@ -302,6 +316,35 @@ async function executeAction(
       }
     }
 
+    // WHY: New video modes delegate to CREATE_VIDEO logic with mode pre-set.
+    // This keeps backward compatibility while supporting i2v, extend, and video-edit.
+    case "ANIMATE_IMAGE": {
+      const i2vAction: AgentAction = {
+        ...action,
+        action: "CREATE_VIDEO",
+        mode: "i2v",
+      };
+      return executeAction(i2vAction, onCanvasAction, nodes, statusCallback);
+    }
+
+    case "EXTEND_VIDEO": {
+      const extendAction: AgentAction = {
+        ...action,
+        action: "CREATE_VIDEO",
+        mode: "extend",
+      };
+      return executeAction(extendAction, onCanvasAction, nodes, statusCallback);
+    }
+
+    case "EDIT_VIDEO": {
+      const editAction: AgentAction = {
+        ...action,
+        action: "CREATE_VIDEO",
+        mode: "video-edit",
+      };
+      return executeAction(editAction, onCanvasAction, nodes, statusCallback);
+    }
+
     default:
       return { success: false, detail: `Unknown action: ${action.action}` };
   }
@@ -310,6 +353,9 @@ async function executeAction(
 const ACTION_LABELS: Record<string, { label: string; icon: typeof ImageIcon }> = {
   CREATE_IMAGE: { label: "Generating image", icon: ImageIcon },
   CREATE_VIDEO: { label: "Creating video project", icon: Video },
+  ANIMATE_IMAGE: { label: "Animating image to video", icon: Video },
+  EXTEND_VIDEO: { label: "Extending video", icon: Video },
+  EDIT_VIDEO: { label: "Editing video", icon: Video },
   CREATE_COPY: { label: "Generating copy", icon: FileText },
   SCHEDULE_POST: { label: "Scheduling post", icon: Calendar },
   PUBLISH_NOW: { label: "Publishing", icon: SendIcon },

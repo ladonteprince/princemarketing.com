@@ -13,6 +13,10 @@ const schema = z.object({
   prompt: z.string().min(1),
   duration: z.number().optional(),
   aspectRatio: z.string().optional(),
+  mode: z.enum(['t2v', 'i2v', 'extend', 'character', 'video-edit']).optional(),
+  sourceImage: z.string().url().optional(),
+  sourceVideo: z.string().url().optional(),
+  seed: z.number().optional(),
 });
 
 export async function POST(request: Request) {

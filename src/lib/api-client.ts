@@ -63,6 +63,10 @@ export type VideoGenerateParams = {
   aspectRatio?: string;
   model?: string;
   images?: string[];
+  mode?: 't2v' | 'i2v' | 'extend' | 'character' | 'video-edit';
+  sourceImage?: string;  // For i2v (image-to-video)
+  sourceVideo?: string;  // For extend and video-edit
+  seed?: number;
 };
 
 export type CopyGenerateParams = {
