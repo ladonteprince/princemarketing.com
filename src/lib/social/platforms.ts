@@ -8,7 +8,7 @@ export const PLATFORMS = {
     // The old instagram.com/oauth/authorize is the deprecated Basic Display API.
     authUrl: "https://www.facebook.com/v19.0/dialog/oauth",
     tokenUrl: "https://graph.facebook.com/v19.0/oauth/access_token",
-    scopes: ["instagram_basic", "instagram_content_publish", "pages_show_list"],
+    scopes: ["instagram_business_basic", "instagram_business_content_publish", "instagram_business_manage_comments", "pages_show_list", "pages_read_engagement"],
     icon: "Instagram",
     envPrefix: "INSTAGRAM",
     dbType: "INSTAGRAM" as const,
