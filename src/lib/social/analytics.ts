@@ -167,6 +167,52 @@ export async function fetchPlatformAnalytics(
         };
       }
 
+      case "google_analytics": {
+        // Google Analytics Data API v1beta — last 30 days metrics
+        // First get the user's GA4 property ID
+        const summaryRes = await fetch(
+          "https://analyticsadmin.googleapis.com/v1beta/accountSummaries",
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
+        const summaryData = await summaryRes.json();
+        const property = summaryData.accountSummaries?.[0]?.propertySummaries?.[0];
+        if (!property?.property) return { ...defaults, platform: "google_analytics" };
+
+        const propertyId = property.property.replace("properties/", "");
+
+        // Run a report for the last 30 days
+        const reportRes = await fetch(
+          `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              dateRanges: [{ startDate: "30daysAgo", endDate: "today" }],
+              metrics: [
+                { name: "activeUsers" },
+                { name: "sessions" },
+                { name: "screenPageViews" },
+                { name: "engagedSessions" },
+              ],
+            }),
+          },
+        );
+        const reportData = await reportRes.json();
+        const row = reportData.rows?.[0]?.metricValues;
+
+        return {
+          ...defaults,
+          platform: "google_analytics",
+          followers: parseInt(row?.[0]?.value ?? "0", 10),    // activeUsers
+          impressions: parseInt(row?.[2]?.value ?? "0", 10),   // pageViews
+          engagement: parseInt(row?.[3]?.value ?? "0", 10),    // engagedSessions
+          posts: parseInt(row?.[1]?.value ?? "0", 10),         // sessions
+        };
+      }
+
       default:
         return defaults;
     }

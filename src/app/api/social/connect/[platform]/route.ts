@@ -56,8 +56,8 @@ export async function GET(
       authUrl.searchParams.set("config_id", config.configId as string);
     }
 
-    // YouTube/Google needs offline access for refresh tokens
-    if (platform === "youtube") {
+    // Google services need offline access for refresh tokens
+    if (platform === "youtube" || platform === "google-analytics") {
       authUrl.searchParams.set("access_type", "offline");
       authUrl.searchParams.set("prompt", "consent");
     }

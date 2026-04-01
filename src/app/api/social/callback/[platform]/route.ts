@@ -136,6 +136,15 @@ export async function GET(
         const meData = await meRes.json();
         const channel = meData.items?.[0];
         accountName = (channel?.snippet?.title as string) ?? "YouTube Channel";
+      } else if (platform === "google-analytics") {
+        // Fetch GA4 account summaries to get property name
+        const gaRes = await fetch("https://analyticsadmin.googleapis.com/v1beta/accountSummaries", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const gaData = await gaRes.json();
+        const firstAccount = gaData.accountSummaries?.[0];
+        const firstProperty = firstAccount?.propertySummaries?.[0];
+        accountName = (firstProperty?.displayName as string) ?? (firstAccount?.displayName as string) ?? "Google Analytics";
       }
     } catch {
       // Keep default name

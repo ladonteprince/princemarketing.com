@@ -60,6 +60,15 @@ export const PLATFORMS = {
     envPrefix: "GOOGLE",
     dbType: "YOUTUBE" as const,
   },
+  "google-analytics": {
+    name: "Google Analytics",
+    authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+    tokenUrl: "https://oauth2.googleapis.com/token",
+    scopes: ["https://www.googleapis.com/auth/analytics.readonly"],
+    icon: "BarChart3",
+    envPrefix: "GOOGLE",
+    dbType: "GOOGLE_ANALYTICS" as const,
+  },
 } as const;
 
 export type PlatformKey = keyof typeof PLATFORMS;

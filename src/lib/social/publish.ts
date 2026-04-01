@@ -296,6 +296,10 @@ async function publishToYoutube({ content, accessToken, mediaUrl }: PublishParam
   }
 }
 
+async function publishToGoogleAnalytics(): Promise<PublishResult> {
+  return { success: false, error: "Google Analytics is an analytics platform — it does not support publishing." };
+}
+
 const publishers: Record<PlatformKey, (params: PublishParams) => Promise<PublishResult>> = {
   facebook: publishToFacebook,
   instagram: publishToInstagram,
@@ -303,6 +307,7 @@ const publishers: Record<PlatformKey, (params: PublishParams) => Promise<Publish
   linkedin: publishToLinkedin,
   tiktok: publishToTiktok,
   youtube: publishToYoutube,
+  "google-analytics": publishToGoogleAnalytics,
 };
 
 export async function publishToplatform(
