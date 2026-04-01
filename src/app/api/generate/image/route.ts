@@ -40,7 +40,14 @@ export async function POST(request: Request) {
     }
 
     const result = await princeAPI.generateImage(parsed.data);
-    return NextResponse.json(result);
+    // Unwrap .ai's { type: "success", data: { imageUrl } } envelope
+    const imageData = result?.data ?? result;
+    return NextResponse.json({
+      imageUrl: imageData.imageUrl ?? imageData.resultUrl,
+      url: imageData.imageUrl ?? imageData.resultUrl,
+      refinedPrompt: imageData.refinedPrompt,
+      score: imageData.score,
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Image generation failed";
