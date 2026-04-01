@@ -129,6 +129,13 @@ export async function GET(
         });
         const meData = await meRes.json();
         accountName = `@${(meData.data?.user?.username as string) ?? (meData.data?.user?.display_name as string) ?? "tiktok"}`;
+      } else if (platform === "youtube") {
+        const meRes = await fetch("https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const meData = await meRes.json();
+        const channel = meData.items?.[0];
+        accountName = (channel?.snippet?.title as string) ?? "YouTube Channel";
       }
     } catch {
       // Keep default name

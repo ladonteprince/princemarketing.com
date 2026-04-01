@@ -51,6 +51,15 @@ export const PLATFORMS = {
     envPrefix: "TIKTOK",
     dbType: "TIKTOK" as const,
   },
+  youtube: {
+    name: "YouTube",
+    authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+    tokenUrl: "https://oauth2.googleapis.com/token",
+    scopes: ["https://www.googleapis.com/auth/youtube.readonly", "https://www.googleapis.com/auth/youtube.upload"],
+    icon: "Youtube",
+    envPrefix: "GOOGLE",
+    dbType: "YOUTUBE" as const,
+  },
 } as const;
 
 export type PlatformKey = keyof typeof PLATFORMS;
@@ -67,6 +76,10 @@ const ENV_VAR_OVERRIDES: Record<string, { clientId: string; clientSecret: string
   FACEBOOK: {
     clientId: "FACEBOOK_APP_ID",
     clientSecret: "FACEBOOK_APP_SECRET",
+  },
+  GOOGLE: {
+    clientId: "GOOGLE_CLIENT_ID",
+    clientSecret: "GOOGLE_CLIENT_SECRET",
   },
 };
 

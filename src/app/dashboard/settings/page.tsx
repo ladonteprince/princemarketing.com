@@ -17,6 +17,7 @@ import {
   Linkedin,
   Twitter,
   Music2,
+  Youtube,
   AlertCircle,
   CheckCircle,
 } from "lucide-react";
@@ -44,6 +45,7 @@ const PLATFORM_ICONS: Record<string, LucideIcon> = {
   LINKEDIN: Linkedin,
   TWITTER: Twitter,
   TIKTOK: Music2,
+  YOUTUBE: Youtube,
 };
 
 const PLATFORM_KEYS: Record<string, string> = {
@@ -52,6 +54,7 @@ const PLATFORM_KEYS: Record<string, string> = {
   LINKEDIN: "linkedin",
   TWITTER: "twitter",
   TIKTOK: "tiktok",
+  YOUTUBE: "youtube",
 };
 
 const ALL_PLATFORMS = [
@@ -60,6 +63,7 @@ const ALL_PLATFORMS = [
   { type: "TWITTER", name: "X (Twitter)" },
   { type: "LINKEDIN", name: "LinkedIn" },
   { type: "TIKTOK", name: "TikTok" },
+  { type: "YOUTUBE", name: "YouTube" },
 ];
 
 const TIER_LABELS: Record<string, { name: string; price: string; features: string }> = {

@@ -186,12 +186,18 @@ async function publishToTiktok({ content }: PublishParams): Promise<PublishResul
   return { success: false, error: "TikTok publishing requires video content. Use the TikTok video upload API." };
 }
 
+async function publishToYoutube({ content }: PublishParams): Promise<PublishResult> {
+  // YouTube Data API requires video upload — text-only posts not supported
+  return { success: false, error: "YouTube publishing requires video content. Use the YouTube upload API." };
+}
+
 const publishers: Record<PlatformKey, (params: PublishParams) => Promise<PublishResult>> = {
   facebook: publishToFacebook,
   instagram: publishToInstagram,
   twitter: publishToTwitter,
   linkedin: publishToLinkedin,
   tiktok: publishToTiktok,
+  youtube: publishToYoutube,
 };
 
 export async function publishToplatform(

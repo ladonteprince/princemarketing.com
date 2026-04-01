@@ -56,6 +56,12 @@ export async function GET(
       authUrl.searchParams.set("config_id", config.configId as string);
     }
 
+    // YouTube/Google needs offline access for refresh tokens
+    if (platform === "youtube") {
+      authUrl.searchParams.set("access_type", "offline");
+      authUrl.searchParams.set("prompt", "consent");
+    }
+
     // Twitter uses PKCE
     if (platform === "twitter") {
       authUrl.searchParams.set("code_challenge", state);
