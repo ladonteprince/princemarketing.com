@@ -39,7 +39,9 @@ export async function GET(
 
     const config = PLATFORMS[platform];
     const redirectUri = `${process.env.NEXTAUTH_URL}/api/social/callback/${platform}`;
-    const scope = config.scopes.join(",");
+    // OAuth2 spec requires space-separated scopes; Instagram/Facebook also accept commas
+    const scopeSeparator = platform === "instagram" || platform === "facebook" ? "," : " ";
+    const scope = config.scopes.join(scopeSeparator);
 
     const authUrl = new URL(config.authUrl);
     authUrl.searchParams.set("client_id", clientId);
