@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { AuthProvider } from "@/components/AuthProvider";
+import { GoogleAnalytics } from "@/components/GoogleAnalytics";
+import { StructuredData } from "@/components/StructuredData";
 import "@/styles/globals.css";
 
 const inter = Inter({
@@ -60,6 +62,8 @@ export default function RootLayout({
       className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
     >
       <body className="overflow-x-hidden bg-void text-cloud">
+        <GoogleAnalytics />
+        <StructuredData />
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>

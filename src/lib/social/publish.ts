@@ -181,14 +181,119 @@ async function publishToLinkedin({ content, accessToken }: PublishParams): Promi
   }
 }
 
-async function publishToTiktok({ content }: PublishParams): Promise<PublishResult> {
-  // TikTok Content Posting API requires video upload — text-only posts not supported
-  return { success: false, error: "TikTok publishing requires video content. Use the TikTok video upload API." };
+async function publishToTiktok({ content, accessToken, mediaUrl }: PublishParams): Promise<PublishResult> {
+  if (!mediaUrl) {
+    return { success: false, error: "TikTok requires video content. Provide a mediaUrl." };
+  }
+  if (!accessToken) {
+    return { success: false, error: "TikTok access token is required." };
+  }
+
+  try {
+    // TikTok Content Posting API - initiate video publish
+    const initRes = await fetch("https://open.tiktokapis.com/v2/post/publish/video/init/", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        post_info: {
+          title: content.slice(0, 150),
+          privacy_level: "PUBLIC_TO_EVERYONE",
+        },
+        source_info: {
+          source: "PULL_FROM_URL",
+          video_url: mediaUrl,
+        },
+      }),
+    });
+
+    if (!initRes.ok) {
+      const err = await initRes.json().catch(() => ({}));
+      return { success: false, error: `TikTok upload failed: ${(err as any)?.error?.message ?? initRes.status}` };
+    }
+
+    const data = await initRes.json();
+    return { success: true, postId: data.data?.publish_id ?? "pending" };
+  } catch (err) {
+    return { success: false, error: `TikTok API error: ${(err as Error).message}` };
+  }
 }
 
-async function publishToYoutube({ content }: PublishParams): Promise<PublishResult> {
-  // YouTube Data API requires video upload — text-only posts not supported
-  return { success: false, error: "YouTube publishing requires video content. Use the YouTube upload API." };
+async function publishToYoutube({ content, accessToken, mediaUrl }: PublishParams): Promise<PublishResult> {
+  if (!mediaUrl) {
+    return { success: false, error: "YouTube requires video content. Provide a mediaUrl." };
+  }
+  if (!accessToken) {
+    return { success: false, error: "YouTube access token is required." };
+  }
+
+  try {
+    // Extract title from first line or first 100 chars
+    const lines = content.split("\n").filter(Boolean);
+    const title = (lines[0] ?? content).slice(0, 100);
+    const description = content;
+
+    // Step 1: Initiate resumable upload
+    const initRes = await fetch(
+      "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          snippet: {
+            title,
+            description,
+            categoryId: "22", // People & Blogs
+          },
+          status: {
+            privacyStatus: "public",
+          },
+        }),
+      },
+    );
+
+    if (!initRes.ok) {
+      const err = await initRes.json().catch(() => ({}));
+      return { success: false, error: `YouTube upload init failed: ${(err as any)?.error?.message ?? initRes.status}` };
+    }
+
+    const uploadUrl = initRes.headers.get("location");
+    if (!uploadUrl) {
+      return { success: false, error: "YouTube did not return an upload URL." };
+    }
+
+    // Step 2: Download the video
+    const videoRes = await fetch(mediaUrl);
+    if (!videoRes.ok) {
+      return { success: false, error: `Failed to download video from ${mediaUrl}` };
+    }
+    const videoBuffer = Buffer.from(await videoRes.arrayBuffer());
+
+    // Step 3: Upload video to YouTube
+    const uploadRes = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "video/mp4",
+        "Content-Length": String(videoBuffer.length),
+      },
+      body: videoBuffer,
+    });
+
+    if (!uploadRes.ok) {
+      const err = await uploadRes.json().catch(() => ({}));
+      return { success: false, error: `YouTube upload failed: ${(err as any)?.error?.message ?? uploadRes.status}` };
+    }
+
+    const videoData = await uploadRes.json();
+    return { success: true, postId: videoData.id };
+  } catch (err) {
+    return { success: false, error: `YouTube API error: ${(err as Error).message}` };
+  }
 }
 
 const publishers: Record<PlatformKey, (params: PublishParams) => Promise<PublishResult>> = {
