@@ -1,7 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Eye, TrendingUp, CalendarCheck, BarChart3 } from "lucide-react";
+import {
+  Eye,
+  TrendingUp,
+  CalendarCheck,
+  BarChart3,
+  Rocket,
+  ArrowRight,
+} from "lucide-react";
 
 type KPIData = {
   totalImpressions: number;
@@ -14,6 +21,15 @@ function formatNumber(n: number): string {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
   return n.toString();
+}
+
+function isAllZero(data: KPIData): boolean {
+  return (
+    data.totalImpressions === 0 &&
+    data.engagementRate === 0 &&
+    data.postsScheduled === 0 &&
+    data.postsPublished === 0
+  );
 }
 
 export function KPIBar() {
@@ -65,20 +81,56 @@ export function KPIBar() {
     },
   ];
 
-  return (
-    <div className="flex items-center gap-4 overflow-x-auto border-b border-smoke bg-graphite/80 backdrop-blur-sm px-4 py-2.5 sm:gap-6 sm:px-5">
-      {items.map((item) => {
-        const Icon = item.icon;
-        return (
-          <div key={item.label} className="flex shrink-0 items-center gap-2">
-            <Icon size={14} strokeWidth={1.5} className="text-ash" />
-            <span className="font-mono text-sm font-semibold text-cloud">
-              {item.value}
-            </span>
-            <span className="text-[10px] text-ash">{item.label}</span>
+  // Onboarding state when all values are zero
+  if (data && isAllZero(data)) {
+    return (
+      <div className="relative overflow-hidden border-b border-smoke bg-gradient-to-r from-graphite via-graphite/95 to-royal/[0.04] backdrop-blur-sm px-4 py-3 sm:px-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-royal-muted border border-royal/15">
+            <Rocket size={16} strokeWidth={1.5} className="text-royal" />
           </div>
-        );
-      })}
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-cloud/90">
+              Getting started
+            </p>
+            <p className="text-[11px] text-ash leading-snug">
+              Create your first post to see metrics here
+            </p>
+          </div>
+          <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-royal/70">
+            <span>Chat to begin</span>
+            <ArrowRight size={12} strokeWidth={1.5} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative overflow-hidden border-b border-smoke bg-gradient-to-r from-graphite via-graphite/95 to-graphite/90 backdrop-blur-sm px-4 py-3 sm:px-5">
+      <div className="flex items-center gap-5 overflow-x-auto sm:gap-8">
+        {items.map((item) => {
+          const Icon = item.icon;
+          return (
+            <div
+              key={item.label}
+              className="group flex shrink-0 items-center gap-3 transition-opacity duration-200 hover:opacity-100 opacity-90"
+            >
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate/50 border border-smoke/50 transition-colors duration-200 group-hover:border-royal/20 group-hover:bg-royal-muted">
+                <Icon size={14} strokeWidth={1.5} className="text-ash transition-colors duration-200 group-hover:text-royal" />
+              </div>
+              <div className="flex flex-col">
+                <span className="font-mono text-lg font-bold leading-tight text-cloud tracking-tight">
+                  {item.value}
+                </span>
+                <span className="text-[10px] text-ash/70 uppercase tracking-wider leading-tight">
+                  {item.label}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

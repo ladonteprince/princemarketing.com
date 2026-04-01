@@ -68,13 +68,22 @@ export default function CampaignsPage() {
       <div className="flex-1 px-6 py-6">
         {/* Actions bar */}
         <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <Badge variant="royal">{activeCampaigns.length} active</Badge>
             <Badge>{campaigns.length} total</Badge>
           </div>
-          <Button size="sm" icon={<Plus size={16} strokeWidth={1.5} />}>
+          <button className="
+            flex items-center gap-2 rounded-lg
+            bg-gradient-to-r from-royal to-royal-hover
+            px-4 py-2.5 text-sm font-semibold text-white
+            shadow-md shadow-royal/25
+            hover:shadow-lg hover:shadow-royal/30 hover:brightness-110
+            active:scale-[0.98]
+            transition-all duration-200 cursor-pointer
+          ">
+            <Plus size={16} strokeWidth={2} />
             New campaign
-          </Button>
+          </button>
         </div>
 
         {loading ? (
@@ -86,48 +95,80 @@ export default function CampaignsPage() {
             ))}
           </div>
         ) : campaigns.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-royal-muted">
-              <Megaphone size={32} strokeWidth={1.5} className="text-royal" />
+          <div className="flex flex-col items-center justify-center py-24">
+            <div className="
+              mb-6 flex h-20 w-20 items-center justify-center rounded-2xl
+              bg-gradient-to-br from-royal-muted to-royal/10
+              border border-royal/20 shadow-lg shadow-royal/10
+            ">
+              <Megaphone size={36} strokeWidth={1.5} className="text-royal" />
             </div>
-            <h3 className="mb-2 text-lg font-semibold text-cloud">
+            <h3 className="mb-2 text-xl font-semibold text-cloud">
               No campaigns yet
             </h3>
-            <p className="max-w-md text-center text-sm text-ash">
-              Create your first campaign to organize your content around a clear marketing goal.
+            <p className="mb-6 max-w-sm text-center text-sm leading-relaxed text-ash">
+              Campaigns organize your content around clear marketing goals. Launch your first one to get started.
             </p>
+            <button className="
+              flex items-center gap-2 rounded-lg
+              bg-gradient-to-r from-royal to-royal-hover
+              px-5 py-2.5 text-sm font-semibold text-white
+              shadow-md shadow-royal/25
+              hover:shadow-lg hover:shadow-royal/30 hover:brightness-110
+              active:scale-[0.98]
+              transition-all duration-200 cursor-pointer
+            ">
+              <Plus size={16} strokeWidth={2} />
+              Create your first campaign
+            </button>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
             {campaigns.map((campaign) => (
               <Card key={campaign.id} padding="md" hover>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0 flex-1">
-                    <div className="mb-1 flex items-center gap-2">
-                      <h3 className="text-sm font-semibold text-cloud">
+                    <div className="mb-2 flex items-center gap-2.5">
+                      <h3 className="text-sm font-semibold text-cloud tracking-tight">
                         {campaign.name}
                       </h3>
                       <Badge variant={STATUS_BADGE_VARIANT[campaign.status]}>
                         {campaign.status.toLowerCase()}
                       </Badge>
+                      {campaign._count?.entries != null && campaign._count.entries > 0 && (
+                        <span className="text-[10px] text-ash/60 font-medium">
+                          {campaign._count.entries} {campaign._count.entries === 1 ? "entry" : "entries"}
+                        </span>
+                      )}
                     </div>
+
+                    {campaign.description && (
+                      <p className="mb-2 text-xs text-ash/80 line-clamp-1 leading-relaxed">
+                        {campaign.description}
+                      </p>
+                    )}
 
                     <div className="flex items-center gap-4 text-xs text-ash">
                       {campaign.goal && (
-                        <span className="flex items-center gap-1">
-                          <Target size={12} strokeWidth={1.5} />
+                        <span className="flex items-center gap-1.5 rounded-md bg-slate/40 px-2 py-0.5">
+                          <Target size={11} strokeWidth={1.5} className="text-royal/60" />
                           {campaign.goal}
                         </span>
                       )}
-                      <span className="flex items-center gap-1">
-                        <Calendar size={12} strokeWidth={1.5} />
+                      <span className="flex items-center gap-1.5">
+                        <Calendar size={11} strokeWidth={1.5} className="text-ash/50" />
                         {formatDateRange(campaign.startDate, campaign.endDate)}
                       </span>
                     </div>
                   </div>
 
                   <button
-                    className="flex h-8 w-8 items-center justify-center rounded-lg text-ash hover:text-cloud hover:bg-slate transition-colors cursor-pointer"
+                    className="
+                      flex h-9 w-9 items-center justify-center rounded-lg
+                      text-ash hover:text-cloud hover:bg-slate
+                      border border-transparent hover:border-smoke
+                      transition-all duration-200 cursor-pointer
+                    "
                     aria-label="Campaign options"
                   >
                     <MoreHorizontal size={16} strokeWidth={1.5} />

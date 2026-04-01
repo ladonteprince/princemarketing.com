@@ -10,6 +10,9 @@ import {
   Share2,
   MessageCircle,
   BarChart3,
+  Cable,
+  ArrowRight,
+  Sparkles,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -85,28 +88,57 @@ export default function AnalyticsPage() {
         subtitle="Track what is working and optimize your strategy"
       />
 
-      <div className="flex-1 px-6 py-6">
+      <div className="flex-1 px-6 py-8">
         {loading ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {Array.from({ length: 5 }).map((_, i) => (
               <Card key={i} padding="md">
-                <div className="h-16 animate-pulse rounded bg-slate" />
+                <div className="mb-3 h-9 w-9 animate-pulse rounded-xl bg-slate/60" />
+                <div className="h-7 w-16 animate-pulse rounded-md bg-slate/50 mb-1.5" />
+                <div className="h-3 w-20 animate-pulse rounded bg-slate/40" />
               </Card>
             ))}
           </div>
         ) : !data || data.totalImpressions === 0 ? (
-          // No data state — honest, not fake
-          <div className="flex flex-col items-center justify-center py-20">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-royal-muted">
-              <BarChart3 size={32} strokeWidth={1.5} className="text-royal" />
+          // No data state — beautiful and inviting
+          <div className="flex flex-col items-center justify-center py-24">
+            {/* Icon cluster */}
+            <div className="relative mb-8">
+              <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-royal/15 to-violet-600/10 border border-royal/15 shadow-lg shadow-royal/5">
+                <BarChart3 size={36} strokeWidth={1.2} className="text-royal" />
+              </div>
+              <div className="absolute -top-2 -right-2 flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 border border-emerald-500/15">
+                <TrendingUp size={14} strokeWidth={1.5} className="text-emerald-400/60" />
+              </div>
+              <div className="absolute -bottom-1 -left-3 flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/10 border border-amber-500/15">
+                <Sparkles size={12} strokeWidth={1.5} className="text-amber-400/50" />
+              </div>
             </div>
+
             <h3 className="mb-2 text-lg font-semibold text-cloud">
               No analytics data yet
             </h3>
-            <p className="max-w-md text-center text-sm text-ash">
-              Analytics will appear here once you start publishing content.
-              Connect your platforms in Settings, then publish posts from your Content Calendar.
+            <p className="max-w-sm text-center text-sm text-ash leading-relaxed mb-8">
+              Once you publish content, performance metrics will populate here with real-time insights across all your connected platforms.
             </p>
+
+            {/* Steps to get started */}
+            <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4">
+              <div className="flex items-center gap-2.5 rounded-xl border border-smoke/60 bg-slate/30 px-4 py-2.5 transition-all duration-200 hover:border-royal/20">
+                <Cable size={14} strokeWidth={1.5} className="text-royal/50" />
+                <span className="text-xs text-ash">Connect platforms</span>
+              </div>
+              <ArrowRight size={14} strokeWidth={1.5} className="text-ash/30 hidden sm:block" />
+              <div className="flex items-center gap-2.5 rounded-xl border border-smoke/60 bg-slate/30 px-4 py-2.5 transition-all duration-200 hover:border-royal/20">
+                <BarChart3 size={14} strokeWidth={1.5} className="text-royal/50" />
+                <span className="text-xs text-ash">Publish content</span>
+              </div>
+              <ArrowRight size={14} strokeWidth={1.5} className="text-ash/30 hidden sm:block" />
+              <div className="flex items-center gap-2.5 rounded-xl border border-smoke/60 bg-slate/30 px-4 py-2.5 transition-all duration-200 hover:border-royal/20">
+                <TrendingUp size={14} strokeWidth={1.5} className="text-royal/50" />
+                <span className="text-xs text-ash">Track results</span>
+              </div>
+            </div>
           </div>
         ) : (
           <>
@@ -116,13 +148,19 @@ export default function AnalyticsPage() {
                 const Icon = metric.icon;
                 return (
                   <Card key={metric.label} padding="md">
-                    <div className="mb-2 flex items-center justify-between">
-                      <Icon size={16} strokeWidth={1.5} className="text-ash" />
+                    <div className="group transition-all duration-200">
+                      <div className="mb-3 flex items-center justify-between">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate/50 border border-smoke/50 transition-colors duration-200 group-hover:border-royal/20 group-hover:bg-royal-muted">
+                          <Icon size={16} strokeWidth={1.5} className="text-ash transition-colors duration-200 group-hover:text-royal" />
+                        </div>
+                      </div>
+                      <div className="font-mono text-2xl font-bold text-cloud tracking-tight">
+                        {metric.value}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-ash/70 uppercase tracking-wider">
+                        {metric.label}
+                      </div>
                     </div>
-                    <div className="font-mono text-xl font-bold text-cloud">
-                      {metric.value}
-                    </div>
-                    <div className="text-xs text-ash">{metric.label}</div>
                   </Card>
                 );
               })}
@@ -132,39 +170,47 @@ export default function AnalyticsPage() {
               {/* Posts published count */}
               <div className="lg:col-span-3">
                 <Card padding="md">
-                  <h3 className="mb-4 text-sm font-semibold text-cloud">
-                    Posts published
-                  </h3>
-                  <div className="font-mono text-3xl font-bold text-cloud">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 border border-emerald-500/15">
+                      <BarChart3 size={16} strokeWidth={1.5} className="text-emerald-400" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-cloud">
+                      Posts published
+                    </h3>
+                  </div>
+                  <div className="font-mono text-4xl font-bold text-cloud tracking-tight">
                     {data.postsPublished}
                   </div>
-                  <p className="mt-1 text-xs text-ash">Total published content pieces</p>
+                  <p className="mt-1.5 text-[11px] text-ash/70 uppercase tracking-wider">Total published content pieces</p>
                 </Card>
               </div>
 
               {/* Top posts */}
               <div className="lg:col-span-2">
                 <Card padding="none">
-                  <div className="border-b border-smoke px-4 py-3">
+                  <div className="border-b border-smoke px-4 py-3.5 flex items-center gap-2.5">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-royal-muted">
+                      <TrendingUp size={13} strokeWidth={1.5} className="text-royal" />
+                    </div>
                     <h3 className="text-sm font-semibold text-cloud">
-                      Top performing posts
+                      Top performing
                     </h3>
                   </div>
                   {data.topPosts.length === 0 ? (
-                    <div className="px-4 py-6 text-center text-sm text-ash">
-                      No published posts with analytics yet.
+                    <div className="px-4 py-8 text-center">
+                      <p className="text-sm text-ash/60">No published posts with analytics yet.</p>
                     </div>
                   ) : (
-                    <ul className="divide-y divide-smoke">
+                    <ul className="divide-y divide-smoke/60">
                       {data.topPosts.map((post) => (
-                        <li key={post.id} className="px-4 py-3">
-                          <p className="mb-1 truncate text-sm text-cloud">
+                        <li key={post.id} className="px-4 py-3.5 transition-colors duration-200 hover:bg-slate/30">
+                          <p className="mb-1.5 truncate text-sm font-medium text-cloud">
                             {post.title}
                           </p>
                           <div className="flex items-center gap-3 text-xs text-ash">
-                            <span>{post.platform}</span>
+                            <span className="rounded-md bg-slate/50 px-1.5 py-0.5 text-[10px] uppercase tracking-wider">{post.platform}</span>
                             <span className="font-mono">{formatNumber(post.impressions)} views</span>
-                            <span className="font-mono text-royal">
+                            <span className="font-mono text-royal font-medium">
                               {post.impressions > 0
                                 ? `${((post.engagement / post.impressions) * 100).toFixed(1)}%`
                                 : "0%"}{" "}

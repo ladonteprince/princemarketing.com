@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { Send } from "lucide-react";
 import { Canvas } from "@/components/dashboard/Canvas";
 import { ChatPanel } from "@/components/dashboard/ChatPanel";
 import { VideoEditor } from "@/components/dashboard/VideoEditor";
@@ -55,6 +56,7 @@ export default function DashboardPage() {
             id: node.videoProjectId,
             title: node.title,
             scenes: [],
+            referenceImages: [],
             createdAt: node.createdAt,
           };
           setVideoProjects((prev) => new Map(prev).set(project.id, project));
@@ -125,13 +127,16 @@ export default function DashboardPage() {
           {/* Simplified node list for mobile */}
           <div className="flex h-full flex-col overflow-y-auto bg-void p-4 lg:hidden">
             {nodes.length === 0 ? (
-              <div className="flex flex-1 items-center justify-center text-center">
-                <div>
-                  <p className="text-sm font-medium text-cloud/80">
-                    Chat with your AI to create content
-                  </p>
-                  <p className="mt-1 text-xs text-ash">
-                    Content will appear here as cards.
+              <div className="flex flex-1 items-center justify-center text-center px-6">
+                <div className="max-w-xs">
+                  <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-royal/15 to-violet-600/10 border border-royal/15">
+                    <Send size={22} strokeWidth={1.2} className="text-royal/70" />
+                  </div>
+                  <h3 className="text-sm font-semibold text-cloud/90 mb-1.5">
+                    Start creating
+                  </h3>
+                  <p className="text-xs text-ash leading-relaxed">
+                    Chat with your AI to generate images, videos, and copy. Content cards will appear here.
                   </p>
                 </div>
               </div>
@@ -141,21 +146,21 @@ export default function DashboardPage() {
                   <button
                     key={node.id}
                     onClick={() => handleNodeClick(node)}
-                    className="flex flex-col items-start rounded-xl border border-smoke bg-graphite/90 p-3 text-left transition-colors hover:border-royal/40"
+                    className="flex flex-col items-start rounded-2xl border border-smoke bg-graphite/95 p-3 text-left transition-all duration-200 hover:border-royal/30 hover:shadow-lg hover:shadow-royal/5 hover:-translate-y-0.5"
                   >
                     {node.thumbnail ? (
                       <img
                         src={node.thumbnail}
                         alt={node.title}
-                        className="mb-2 h-20 w-full rounded-lg object-cover"
+                        className="mb-2.5 h-24 w-full rounded-xl object-cover"
                       />
                     ) : (
-                      <div className="mb-2 flex h-20 w-full items-center justify-center rounded-lg bg-slate/60">
-                        <span className="text-xs uppercase tracking-wider text-ash/40">{node.type}</span>
+                      <div className="mb-2.5 flex h-24 w-full items-center justify-center rounded-xl bg-slate/50 border border-smoke/30">
+                        <span className="text-[10px] uppercase tracking-widest text-ash/40 font-medium">{node.type}</span>
                       </div>
                     )}
-                    <p className="truncate text-xs font-medium text-cloud">{node.title}</p>
-                    <span className="mt-1 text-[10px] text-ash">{node.status}</span>
+                    <p className="truncate text-xs font-medium text-cloud w-full">{node.title}</p>
+                    <span className="mt-1 text-[10px] text-ash/60 capitalize">{node.status}</span>
                   </button>
                 ))}
               </div>

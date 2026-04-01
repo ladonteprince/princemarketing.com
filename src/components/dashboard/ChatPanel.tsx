@@ -664,19 +664,25 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
 
       {/* Node references bar */}
       {nodes.length > 0 && (
-        <div className="flex items-center gap-2 border-b border-smoke/50 px-4 py-2 overflow-x-auto">
-          <span className="shrink-0 text-[10px] uppercase tracking-wider text-ash">Canvas:</span>
+        <div className="flex items-center gap-2 border-b border-smoke/50 px-4 py-2.5 overflow-x-auto">
+          <span className="shrink-0 text-[10px] uppercase tracking-widest text-ash/60 font-medium">Canvas</span>
           {nodes.slice(-5).map((node) => {
             const icons: Record<string, typeof ImageIcon> = { image: ImageIcon, video: Video, copy: FileText };
             const Icon = icons[node.type] ?? FileText;
             return (
-              <div
+              <button
                 key={node.id}
-                className="flex shrink-0 items-center gap-1 rounded-md bg-slate/60 px-2 py-0.5"
+                className="
+                  flex shrink-0 items-center gap-1.5 rounded-md
+                  border border-smoke/60 bg-slate/50
+                  px-2.5 py-1 cursor-pointer
+                  hover:border-royal/40 hover:bg-slate/80
+                  transition-all duration-200
+                "
               >
                 <Icon size={10} className="text-royal" />
-                <span className="text-[10px] text-ash truncate max-w-[80px]">{node.title}</span>
-              </div>
+                <span className="text-[10px] text-ash hover:text-cloud truncate max-w-[80px] transition-colors">{node.title}</span>
+              </button>
             );
           })}
         </div>
@@ -694,31 +700,44 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
       )}
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
-        <div className="flex flex-col gap-3">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-5">
+        <div className="flex flex-col gap-4">
           {messages.map((msg) => (
             <div key={msg.id}>
               <ChatMessage role={msg.role} content={msg.content} userName={userName} />
 
               {/* Action status indicators */}
               {msg.actionStatuses && msg.actionStatuses.length > 0 && (
-                <div className="mt-2 ml-11 flex flex-col gap-1.5">
+                <div className="mt-2.5 ml-11 flex flex-col gap-2">
                   {msg.actionStatuses.map((as, i) => {
                     const actionMeta = ACTION_LABELS[as.action];
                     const Icon = actionMeta?.icon ?? FileText;
                     const hasProgress = as.status === "running" && as.progress != null && as.progress > 0;
                     return (
-                      <div key={i} className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2 rounded-lg bg-slate/40 px-3 py-1.5 text-xs">
+                      <div key={i} className="flex flex-col gap-1.5">
+                        <div className={`
+                          flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs
+                          ${as.status === "running"
+                            ? "bg-royal/10 border border-royal/20"
+                            : as.status === "done"
+                              ? "bg-emerald-500/10 border border-emerald-500/20"
+                              : as.status === "error"
+                                ? "bg-coral/10 border border-coral/20"
+                                : "bg-slate/40 border border-transparent"
+                          }
+                        `}>
                           {as.status === "running" ? (
-                            <Loader2 size={12} className="animate-spin text-royal" />
+                            <Loader2 size={13} className="animate-spin text-royal" />
                           ) : as.status === "done" ? (
-                            <Check size={12} className="text-emerald-400" />
+                            <Check size={13} className="text-emerald-400" />
                           ) : as.status === "error" ? (
-                            <AlertCircle size={12} className="text-coral" />
+                            <AlertCircle size={13} className="text-coral" />
                           ) : (
-                            <Icon size={12} className="text-ash" />
+                            <Icon size={13} className="text-ash" />
                           )}
+                          <Icon size={11} className={`
+                            ${as.status === "running" ? "text-royal/60" : "text-ash/40"}
+                          `} />
                           <span className={`flex-1 ${as.status === "done" ? "text-cloud" : as.status === "error" ? "text-coral" : "text-ash"}`}>
                             {as.status === "done" || as.status === "error"
                               ? as.detail ?? as.label
@@ -727,14 +746,14 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
                                 : `${as.label}...`}
                           </span>
                           {hasProgress && (
-                            <span className="text-[10px] tabular-nums text-ash/70">{as.progress}%</span>
+                            <span className="text-[10px] tabular-nums font-medium text-royal/80">{as.progress}%</span>
                           )}
                         </div>
                         {/* Progress bar for SSE-streamed actions */}
                         {hasProgress && (
-                          <div className="mx-3 h-1 overflow-hidden rounded-full bg-slate/60">
+                          <div className="mx-3 h-1.5 overflow-hidden rounded-full bg-slate/80">
                             <div
-                              className="h-full rounded-full bg-royal transition-all duration-500 ease-out"
+                              className="h-full rounded-full bg-gradient-to-r from-royal via-royal to-royal-hover transition-all duration-500 ease-out shadow-[0_0_8px_rgba(99,102,241,0.4)]"
                               style={{ width: `${as.progress}%` }}
                             />
                           </div>
@@ -747,14 +766,26 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
 
               {/* Node reference chips */}
               {msg.nodeRefs && msg.nodeRefs.length > 0 && (
-                <div className="mt-1 ml-11 flex flex-wrap gap-1">
+                <div className="mt-2 ml-11 flex flex-wrap gap-1.5">
                   {msg.nodeRefs.map((ref) => {
                     const node = nodes.find((n) => n.id === ref);
-                    return node ? (
-                      <Badge key={ref} variant="royal" className="text-[10px]">
-                        {node.type}: {node.title}
-                      </Badge>
-                    ) : null;
+                    if (!node) return null;
+                    const icons: Record<string, typeof ImageIcon> = { image: ImageIcon, video: Video, copy: FileText };
+                    const NodeIcon = icons[node.type] ?? FileText;
+                    return (
+                      <button
+                        key={ref}
+                        className="
+                          flex items-center gap-1.5 rounded-md border border-royal/30 bg-royal/10
+                          px-2.5 py-1 text-[10px] font-medium text-royal
+                          hover:bg-royal/20 hover:border-royal/50 hover:shadow-sm
+                          transition-all duration-200 cursor-pointer
+                        "
+                      >
+                        <NodeIcon size={10} strokeWidth={2} />
+                        <span className="truncate max-w-[100px]">{node.title}</span>
+                      </button>
+                    );
                   })}
                 </div>
               )}
@@ -763,10 +794,10 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
 
           {isThinking && (
             <div className="flex gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-royal-muted">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-royal-muted shadow-sm shadow-royal/20">
                 <img src="/logos/pm-icon.svg" alt="AI" className="h-5 w-5" />
               </div>
-              <div className="rounded-2xl rounded-tl-md bg-slate px-4 py-3">
+              <div className="rounded-2xl rounded-tl-md bg-slate/80 backdrop-blur-sm px-4 py-3 shadow-sm">
                 <ThinkingDots />
               </div>
             </div>

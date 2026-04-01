@@ -18,9 +18,17 @@ export interface ContentNode {
 
 export type VideoSceneStatus = "generating" | "ready" | "regenerating";
 
+export type VideoSceneMode = "t2v" | "i2v" | "character" | "extend";
+
 export interface VideoSceneVersion {
   url: string;
   createdAt: string;
+}
+
+export interface ReferenceImage {
+  id: string;
+  url: string;
+  label: string;
 }
 
 export interface VideoScene {
@@ -28,10 +36,13 @@ export interface VideoScene {
   prompt: string;
   videoUrl?: string;
   thumbnailUrl?: string;
+  sourceImageUrl?: string; // starting frame for i2v mode
   duration: number; // seconds
   trimStart: number; // trim in-point
   trimEnd: number; // trim out-point
   status: VideoSceneStatus;
+  mode: VideoSceneMode;
+  referenceImageIds: string[]; // IDs referencing project-level reference images
   versions: VideoSceneVersion[];
 }
 
@@ -39,6 +50,8 @@ export interface VideoProject {
   id: string;
   title: string;
   scenes: VideoScene[];
+  referenceImages: ReferenceImage[];
+  audioUrl?: string;
   createdAt: string;
 }
 

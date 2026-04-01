@@ -17,6 +17,7 @@ export default function VideoEditorPage() {
     id: projectId,
     title: "Untitled Video",
     scenes: [],
+    referenceImages: [],
     createdAt: new Date().toISOString(),
   });
 
@@ -50,6 +51,8 @@ export default function VideoEditorPage() {
       trimEnd: 5,
       status: "ready",
       versions: [],
+      mode: "t2v" as const,
+      referenceImageIds: [],
     };
     setProject((prev) => ({
       ...prev,

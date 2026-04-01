@@ -105,24 +105,36 @@ export function WeekView() {
   return (
     <div>
       {/* Week navigation */}
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="mb-8 flex items-center justify-between">
+        <div className="flex items-center gap-4">
           <button
             onClick={() => setWeekOffset((prev) => prev - 1)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-ash hover:text-cloud hover:bg-slate transition-colors cursor-pointer"
+            className="
+              flex h-9 w-9 items-center justify-center rounded-lg
+              border border-smoke text-ash
+              hover:text-cloud hover:bg-slate hover:border-ash/30
+              active:scale-95
+              transition-all duration-200 cursor-pointer
+            "
             aria-label="Previous week"
           >
-            <ChevronLeft size={16} strokeWidth={1.5} />
+            <ChevronLeft size={18} strokeWidth={2} />
           </button>
-          <span className="text-sm font-medium text-cloud">
+          <span className="text-base font-semibold tracking-tight text-cloud">
             {formatDate(weekDates[0])} &ndash; {formatDate(weekDates[6])}
           </span>
           <button
             onClick={() => setWeekOffset((prev) => prev + 1)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-ash hover:text-cloud hover:bg-slate transition-colors cursor-pointer"
+            className="
+              flex h-9 w-9 items-center justify-center rounded-lg
+              border border-smoke text-ash
+              hover:text-cloud hover:bg-slate hover:border-ash/30
+              active:scale-95
+              transition-all duration-200 cursor-pointer
+            "
             aria-label="Next week"
           >
-            <ChevronRight size={16} strokeWidth={1.5} />
+            <ChevronRight size={18} strokeWidth={2} />
           </button>
         </div>
 
@@ -158,18 +170,26 @@ export function WeekView() {
                 key={dayIndex}
                 className={`
                   min-h-[200px] rounded-xl border p-3
-                  ${today ? "border-royal/40 bg-royal-muted/30" : "border-smoke bg-graphite"}
+                  transition-all duration-200
+                  ${today
+                    ? "border-royal/50 bg-royal-muted/30 shadow-sm shadow-royal/10 ring-1 ring-royal/20"
+                    : "border-smoke bg-graphite hover:border-ash/30 hover:bg-graphite/80"
+                  }
                 `}
               >
                 {/* Day header */}
                 <div className="mb-3 flex items-center justify-between">
-                  <span className="text-xs font-medium text-ash">
+                  <span className={`text-xs font-medium ${today ? "text-royal" : "text-ash"}`}>
                     {DAY_NAMES[dayIndex]}
                   </span>
                   <span
                     className={`
-                      flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium
-                      ${today ? "bg-royal text-white" : "text-cloud"}
+                      flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold
+                      ${today
+                        ? "bg-royal text-white shadow-sm shadow-royal/30"
+                        : "text-cloud hover:bg-slate/60"
+                      }
+                      transition-colors duration-200
                     `}
                   >
                     {date.getDate()}
@@ -181,20 +201,24 @@ export function WeekView() {
                   {dayEntries.map((entry) => (
                     <div
                       key={entry.id}
-                      className="group cursor-pointer rounded-lg border border-smoke bg-slate p-2 transition-colors hover:border-ash/30"
+                      className="
+                        group cursor-pointer rounded-lg border border-smoke bg-slate p-2.5
+                        transition-all duration-200
+                        hover:border-royal/30 hover:bg-slate/80 hover:shadow-sm
+                      "
                     >
-                      <div className="mb-1 flex items-center justify-between">
-                        <span className="text-[10px] font-mono text-ash">
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <span className="text-[10px] font-mono text-ash/70">
                           {formatTime(entry.scheduledAt)}
                         </span>
-                        <span className="text-[10px] font-medium text-ash">
+                        <span className="text-[10px] font-semibold tracking-wide text-ash/80">
                           {PLATFORM_LABELS[entry.platform]}
                         </span>
                       </div>
                       <p className="text-xs leading-snug text-cloud line-clamp-2">
                         {entry.title}
                       </p>
-                      <div className="mt-1.5 flex items-center justify-between">
+                      <div className="mt-2 flex items-center justify-between">
                         <Badge variant={STATUS_BADGE_VARIANT[entry.status]}>
                           {entry.status.toLowerCase()}
                         </Badge>
@@ -205,7 +229,13 @@ export function WeekView() {
                               handlePublish(entry);
                             }}
                             disabled={publishing === entry.id}
-                            className="flex items-center gap-1 text-[10px] text-royal hover:text-royal-hover transition-colors cursor-pointer disabled:opacity-50"
+                            className="
+                              flex items-center gap-1 rounded-md px-1.5 py-0.5
+                              text-[10px] font-medium text-royal
+                              hover:text-royal-hover hover:bg-royal/10
+                              transition-all duration-200 cursor-pointer
+                              disabled:opacity-50
+                            "
                             title="Publish now"
                           >
                             <Send size={10} strokeWidth={1.5} />
@@ -217,8 +247,8 @@ export function WeekView() {
                   ))}
 
                   {dayEntries.length === 0 && (
-                    <p className="py-4 text-center text-[10px] text-ash/40">
-                      No posts
+                    <p className="py-6 text-center text-[10px] text-ash/25 italic">
+                      No posts scheduled
                     </p>
                   )}
                 </div>

@@ -11,9 +11,9 @@ export default function CalendarPage() {
     <div className="flex flex-col">
       <Header
         title="Content calendar"
-        subtitle="Your week at a glance. Approve, edit, or reschedule."
+        subtitle="Your week at a glance — approve, edit, or reschedule with a tap."
       />
-      <div className="flex-1 px-6 py-6">
+      <div className="flex-1 px-6 py-8">
         <WeekView />
       </div>
     </div>
