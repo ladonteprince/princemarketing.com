@@ -28,8 +28,12 @@ export async function GET(
     const error = url.searchParams.get("error");
 
     if (error) {
+      // WHY: LinkedIn returns "redirect_uri does not match" as an error_description param.
+      // Show a user-friendly message instead of the raw OAuth error code.
+      const errorDesc = url.searchParams.get("error_description") ?? error;
+      const friendlyError = encodeURIComponent(errorDesc);
       return NextResponse.redirect(
-        new URL(`/dashboard/settings?error=${error}`, request.url),
+        new URL(`/dashboard/settings?error=${error}&message=${friendlyError}`, request.url),
       );
     }
 

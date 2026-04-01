@@ -2,13 +2,15 @@
 
 import { useState, type ReactNode } from "react";
 import { Sidebar } from "./Sidebar";
+import { FloatingChat } from "@/components/dashboard/FloatingChat";
 import { Menu } from "lucide-react";
 
 type ShellProps = {
   children: ReactNode;
 };
 
-// WHY: Shell provides the sidebar + main content area layout for the dashboard
+// WHY: Shell provides the sidebar + main content area layout for the dashboard.
+// FloatingChat is rendered here so it appears on every dashboard page.
 export function Shell({ children }: ShellProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
@@ -62,6 +64,9 @@ export function Shell({ children }: ShellProps) {
         </div>
         {children}
       </main>
+
+      {/* Floating chat — visible on all pages except Workspace (where chat is inline) */}
+      <FloatingChat />
     </div>
   );
 }

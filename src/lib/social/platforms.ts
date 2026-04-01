@@ -4,7 +4,8 @@
 export const PLATFORMS = {
   instagram: {
     name: "Instagram",
-    authUrl: "https://api.instagram.com/oauth/authorize",
+    // WHY: Instagram Business Login flow — the general Instagram API returns "Invalid platform app"
+    authUrl: "https://www.instagram.com/oauth/authorize",
     tokenUrl: "https://api.instagram.com/oauth/access_token",
     scopes: ["instagram_basic", "instagram_content_publish", "pages_show_list"],
     icon: "Instagram",
@@ -48,9 +49,25 @@ export function isValidPlatform(key: string): key is PlatformKey {
   return key in PLATFORMS;
 }
 
+// WHY: VPS env uses FACEBOOK_APP_ID / FACEBOOK_APP_SECRET, not FACEBOOK_CLIENT_ID.
+// This mapping resolves the mismatch between the VPS .env naming and the code's expectations.
+const ENV_VAR_OVERRIDES: Record<string, { clientId: string; clientSecret: string }> = {
+  FACEBOOK: {
+    clientId: "FACEBOOK_APP_ID",
+    clientSecret: "FACEBOOK_APP_SECRET",
+  },
+};
+
 export function getPlatformCredentials(platform: PlatformKey) {
   const prefix = PLATFORMS[platform].envPrefix;
-  const clientId = process.env[`${prefix}_CLIENT_ID`];
-  const clientSecret = process.env[`${prefix}_CLIENT_SECRET`];
+  const overrides = ENV_VAR_OVERRIDES[prefix];
+
+  const clientId = overrides
+    ? process.env[overrides.clientId]
+    : process.env[`${prefix}_CLIENT_ID`];
+  const clientSecret = overrides
+    ? process.env[overrides.clientSecret]
+    : process.env[`${prefix}_CLIENT_SECRET`];
+
   return { clientId, clientSecret };
 }

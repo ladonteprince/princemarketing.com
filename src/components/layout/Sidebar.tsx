@@ -9,7 +9,6 @@ import {
   Calendar,
   Megaphone,
   BarChart3,
-  MessageSquare,
   Film,
   Settings,
   ChevronLeft,
@@ -25,13 +24,14 @@ type NavItem = {
   icon: LucideIcon;
 };
 
+// WHY: Removed "AI Strategist" — the chat is now built into the Workspace canvas
+// and accessible via FloatingChat on all other pages.
 const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { label: "Workspace", href: "/dashboard", icon: LayoutDashboard },
   { label: "Calendar", href: "/dashboard/calendar", icon: Calendar },
   { label: "Campaigns", href: "/dashboard/campaigns", icon: Megaphone },
   { label: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
   { label: "Video Editor", href: "/dashboard/video/new", icon: Film },
-  { label: "AI Strategist", href: "/dashboard/chat", icon: MessageSquare },
 ] as const;
 
 const BOTTOM_ITEMS: ReadonlyArray<NavItem> = [
@@ -73,7 +73,7 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
           <Link href="/" className="mx-auto">
             <img
               src="/logos/pm-icon.svg"
-              alt="PrinceMarketing"
+              alt="P."
               className="h-8 w-8"
             />
           </Link>
@@ -103,7 +103,7 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
             const Icon = item.icon;
 
             return (
-              <li key={item.href}>
+              <li key={item.href} className="relative group">
                 <Link
                   href={item.href}
                   className={`
@@ -117,11 +117,23 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
                     }
                     ${collapsed ? "justify-center px-0" : ""}
                   `}
-                  title={collapsed ? item.label : undefined}
                 >
                   <Icon size={18} strokeWidth={1.5} className="shrink-0" />
                   {!collapsed && <span>{item.label}</span>}
                 </Link>
+                {/* Tooltip on hover when collapsed */}
+                {collapsed && (
+                  <div className="
+                    pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2
+                    whitespace-nowrap rounded-md bg-void px-2.5 py-1.5
+                    text-xs font-medium text-cloud shadow-lg
+                    opacity-0 group-hover:opacity-100
+                    transition-opacity duration-150
+                    z-50
+                  ">
+                    {item.label}
+                  </div>
+                )}
               </li>
             );
           })}
@@ -136,7 +148,7 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
             const Icon = item.icon;
 
             return (
-              <li key={item.href}>
+              <li key={item.href} className="relative group">
                 <Link
                   href={item.href}
                   className={`
@@ -150,17 +162,28 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
                     }
                     ${collapsed ? "justify-center px-0" : ""}
                   `}
-                  title={collapsed ? item.label : undefined}
                 >
                   <Icon size={18} strokeWidth={1.5} className="shrink-0" />
                   {!collapsed && <span>{item.label}</span>}
                 </Link>
+                {collapsed && (
+                  <div className="
+                    pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2
+                    whitespace-nowrap rounded-md bg-void px-2.5 py-1.5
+                    text-xs font-medium text-cloud shadow-lg
+                    opacity-0 group-hover:opacity-100
+                    transition-opacity duration-150
+                    z-50
+                  ">
+                    {item.label}
+                  </div>
+                )}
               </li>
             );
           })}
 
           {/* Logout */}
-          <li>
+          <li className="relative group">
             <button
               onClick={() => signOut({ callbackUrl: "/" })}
               className={`
@@ -170,29 +193,41 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
                 hover:text-cloud hover:bg-slate cursor-pointer
                 ${collapsed ? "justify-center px-0" : ""}
               `}
-              title={collapsed ? "Sign out" : undefined}
             >
               <LogOut size={18} strokeWidth={1.5} className="shrink-0" />
               {!collapsed && <span>Sign out</span>}
             </button>
+            {collapsed && (
+              <div className="
+                pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2
+                whitespace-nowrap rounded-md bg-void px-2.5 py-1.5
+                text-xs font-medium text-cloud shadow-lg
+                opacity-0 group-hover:opacity-100
+                transition-opacity duration-150
+                z-50
+              ">
+                Sign out
+              </div>
+            )}
           </li>
         </ul>
 
-        {/* Collapse toggle */}
+        {/* Collapse toggle — clean chevron icon button */}
         <button
           onClick={() => setCollapsed((prev) => !prev)}
-          className={`
-            mt-2 flex w-full items-center justify-center rounded-lg py-2
-            text-ash hover:text-cloud hover:bg-slate
-            transition-colors duration-[var(--transition-micro)]
+          className="
+            mt-3 flex h-8 w-full items-center justify-center rounded-lg
+            border border-smoke/50
+            text-ash hover:text-cloud hover:bg-slate hover:border-smoke
+            transition-all duration-[var(--transition-micro)]
             cursor-pointer
-          `}
+          "
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {collapsed ? (
-            <ChevronRight size={16} strokeWidth={1.5} />
+            <ChevronRight size={14} strokeWidth={2} />
           ) : (
-            <ChevronLeft size={16} strokeWidth={1.5} />
+            <ChevronLeft size={14} strokeWidth={2} />
           )}
         </button>
       </div>

@@ -18,45 +18,41 @@ const requestSchema = z.object({
     .optional(),
 });
 
+// WHY: Agentic system prompt — tells Claude to return structured action blocks
+// that the frontend will parse and execute against the platform's APIs.
 const WORKSPACE_SYSTEM_PROMPT = `${STRATEGIST_SYSTEM_PROMPT}
 
-You are now operating in the Creative Workspace mode. When the user asks you to create content, you must respond with BOTH:
-1. A conversational message explaining what you created
-2. A JSON block at the end of your response wrapped in \`\`\`json ... \`\`\` that describes the nodes to create on the canvas
+You are now operating in the Creative Workspace mode. The user's canvas currently has {existingNodes} content nodes.
 
-The JSON block should be an array of objects with this shape:
+When you take actions, the frontend will automatically:
+- CREATE_IMAGE: call the image generation API and add a node to the canvas
+- CREATE_VIDEO: create VideoScene objects and add a video node to the canvas
+- CREATE_COPY: call the copy generation API and add a node to the canvas
+- SCHEDULE_POST: create a calendar entry
+- PUBLISH_NOW: publish content to connected social platforms
+- GET_ANALYTICS: fetch and display analytics inline
+
+You can also return a legacy JSON block (wrapped in \`\`\`json ... \`\`\`) with a "nodes" array if you need to create canvas nodes directly:
+\`\`\`json
 {
   "nodes": [
-    {
-      "type": "image" | "video" | "copy" | "post",
-      "title": "Short descriptive title",
-      "prompt": "The generation prompt for this piece of content",
-      "thumbnail": null
-    }
+    {"type": "image|video|copy|post", "title": "...", "prompt": "..."}
   ]
 }
+\`\`\`
 
-For video requests, break the video into multiple scenes and return:
+For video requests, break the video into scenes:
+\`\`\`json
 {
   "nodes": [
-    {
-      "type": "video",
-      "title": "Video project title",
-      "prompt": "Overall video concept",
-      "videoProjectId": "auto",
-      "scenes": [
-        { "prompt": "Scene 1 description", "duration": 5 },
-        { "prompt": "Scene 2 description", "duration": 5 }
-      ]
-    }
+    {"type": "video", "title": "...", "prompt": "...", "videoProjectId": "auto", "scenes": [{"prompt": "...", "duration": 5}]}
   ]
 }
+\`\`\`
 
-For campaign requests, return multiple nodes of different types (image, copy, video, post) that form a connected pipeline.
+For campaign requests, return multiple nodes of different types that form a connected pipeline.
 
-If the user is just chatting or asking questions (not requesting content creation), respond normally WITHOUT a JSON block.
-
-Current canvas state: The user has ${"{existingNodes}"} content nodes on their canvas.`;
+If the user is just chatting or asking questions, respond normally WITHOUT any action or JSON blocks.`;
 
 export async function POST(request: Request) {
   try {
@@ -108,7 +104,20 @@ export async function POST(request: Request) {
         .map((block) => block.text)
         .join("\n") || "";
 
-    // Parse JSON block from response
+    // Parse ```action blocks for agentic actions
+    const actions: Array<Record<string, unknown>> = [];
+    const actionPattern = /```action\s*([\s\S]*?)```/g;
+    let actionMatch;
+    while ((actionMatch = actionPattern.exec(fullText)) !== null) {
+      try {
+        const parsed = JSON.parse(actionMatch[1].trim());
+        actions.push(parsed);
+      } catch {
+        // Skip malformed action blocks
+      }
+    }
+
+    // Parse legacy ```json blocks for canvas nodes
     let nodes: unknown[] = [];
     const jsonMatch = fullText.match(/```json\s*([\s\S]*?)```/);
     if (jsonMatch) {
@@ -137,12 +146,16 @@ export async function POST(request: Request) {
       }
     }
 
-    // Clean the message by removing the JSON block
-    const cleanMessage = fullText.replace(/```json\s*[\s\S]*?```/g, "").trim();
+    // Clean the message by removing action and json blocks
+    const cleanMessage = fullText
+      .replace(/```action\s*[\s\S]*?```/g, "")
+      .replace(/```json\s*[\s\S]*?```/g, "")
+      .trim();
 
     return NextResponse.json({
       message: cleanMessage,
       nodes,
+      actions,
     });
   } catch (error) {
     console.error("Create content API error:", error);
