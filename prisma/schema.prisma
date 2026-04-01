@@ -150,14 +150,16 @@ model CalendarEntry {
 }
 
 model Platform {
-  id          String       @id @default(cuid())
-  userId      String
-  type        PlatformType
-  accountName String
-  accessToken String?
-  connected   Boolean      @default(false)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id             String       @id @default(cuid())
+  userId         String
+  type           PlatformType
+  accountName    String
+  accessToken    String?
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+  connected      Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

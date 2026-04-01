@@ -5,6 +5,7 @@ import type { PlatformKey } from "./platforms";
 
 type PublishParams = {
   content: string;
+  title?: string;
   mediaUrl?: string;
   accessToken: string;
 };
@@ -221,7 +222,7 @@ async function publishToTiktok({ content, accessToken, mediaUrl }: PublishParams
   }
 }
 
-async function publishToYoutube({ content, accessToken, mediaUrl }: PublishParams): Promise<PublishResult> {
+async function publishToYoutube({ content, title: explicitTitle, accessToken, mediaUrl }: PublishParams): Promise<PublishResult> {
   if (!mediaUrl) {
     return { success: false, error: "YouTube requires video content. Provide a mediaUrl." };
   }
@@ -230,9 +231,9 @@ async function publishToYoutube({ content, accessToken, mediaUrl }: PublishParam
   }
 
   try {
-    // Extract title from first line or first 100 chars
+    // Use explicit title if provided, otherwise extract from first line or first 100 chars
     const lines = content.split("\n").filter(Boolean);
-    const title = (lines[0] ?? content).slice(0, 100);
+    const title = explicitTitle ?? (lines[0] ?? content).slice(0, 100);
     const description = content;
 
     // Step 1: Initiate resumable upload

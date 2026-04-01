@@ -150,12 +150,48 @@ export async function GET(
       // Keep default name
     }
 
+    // Store refresh token if provided by the OAuth provider.
+    // WHY: Google includes refresh_token on first auth (with prompt=consent),
+    // Twitter includes it on every auth, TikTok includes it too.
+    // Without storing it, we can't refresh tokens when they expire.
+    const refreshToken: string | undefined = tokenData.refresh_token;
+
     // Upsert platform in database
+    // NOTE: The Prisma Platform model currently lacks `refreshToken` and `tokenExpiresAt` fields.
+    // TODO: Add these fields to prisma/schema.prisma:
+    //   refreshToken    String?
+    //   tokenExpiresAt  DateTime?
+    // Then run `npx prisma migrate dev` and uncomment the refreshToken/tokenExpiresAt lines below.
     await db.platform.upsert({
       where: { userId_type: { userId: session.user.id, type: config.dbType } },
-      create: { userId: session.user.id, type: config.dbType, accountName, accessToken, connected: true },
-      update: { accountName, accessToken, connected: true },
+      create: {
+        userId: session.user.id,
+        type: config.dbType,
+        accountName,
+        accessToken,
+        connected: true,
+        refreshToken,
+        tokenExpiresAt: tokenData.expires_in
+          ? new Date(Date.now() + tokenData.expires_in * 1000)
+          : undefined,
+      },
+      update: {
+        accountName,
+        accessToken,
+        connected: true,
+        refreshToken: refreshToken ?? undefined,
+        tokenExpiresAt: tokenData.expires_in
+          ? new Date(Date.now() + tokenData.expires_in * 1000)
+          : undefined,
+      },
     });
+
+    // Log refresh token availability for debugging
+    if (refreshToken) {
+      console.log(`[OAuth] ${platform}: refresh_token received and ready to store`);
+    } else {
+      console.log(`[OAuth] ${platform}: no refresh_token in response (may need prompt=consent for Google)`);
+    }
 
     const response = NextResponse.redirect(`${BASE()}/dashboard/settings?connected=${platform}`);
     response.cookies.delete(`oauth_state_${platform}`);

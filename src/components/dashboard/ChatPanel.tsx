@@ -442,6 +442,11 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
     setIsThinking(true);
     setError(null);
 
+    // Build conversation history from existing messages (exclude initial greeting)
+    const history = messages
+      .filter((m) => m.id !== "initial")
+      .map((m) => ({ role: m.role, content: m.content }));
+
     try {
       const res = await fetch("/api/ai/create-content", {
         method: "POST",
@@ -449,6 +454,7 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
         body: JSON.stringify({
           sessionId,
           message: content,
+          history,
           existingNodes: nodes.map((n) => ({ id: n.id, type: n.type, title: n.title })),
         }),
       });
@@ -552,6 +558,7 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
             });
           },
           () => {},
+          history,
         );
       } catch (streamErr) {
         const message = streamErr instanceof Error ? streamErr.message : "Failed to connect to AI";

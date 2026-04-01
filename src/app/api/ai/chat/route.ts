@@ -2,11 +2,20 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { claude, STRATEGIST_SYSTEM_PROMPT } from "@/lib/claude";
 import { checkRateLimit } from "@/lib/rate-limiter";
+import { compactMessages, type CompactableChatMessage } from "@/lib/chat-compaction";
 import { z } from "zod";
 
 const chatRequestSchema = z.object({
   sessionId: z.string(),
   message: z.string().min(1),
+  history: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string(),
+      }),
+    )
+    .optional(),
 });
 
 export async function POST(request: Request) {
@@ -38,19 +47,23 @@ export async function POST(request: Request) {
       );
     }
 
-    const { message } = parsed.data;
+    const { message, history } = parsed.data;
 
-    // 2. Create streaming response from Claude
+    // 2. Build conversation history with compaction, then stream
+    const fullHistory: CompactableChatMessage[] = [
+      ...(history ?? []),
+      { role: "user" as const, content: message },
+    ];
+    const compactedHistory = compactMessages(fullHistory);
+
     const stream = await claude.messages.stream({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1024,
       system: STRATEGIST_SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: message,
-        },
-      ],
+      messages: compactedHistory.map((m) => ({
+        role: m.role,
+        content: m.content,
+      })),
     });
 
     // 3. Convert to SSE stream

@@ -55,11 +55,12 @@ export async function streamChat(
   message: string,
   onChunk: (text: string) => void,
   onDone: () => void,
+  history?: Array<{ role: "user" | "assistant"; content: string }>,
 ): Promise<void> {
   const response = await fetch(`${BASE_URL}/ai/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId, message }),
+    body: JSON.stringify({ sessionId, message, history }),
   });
 
   if (!response.ok || !response.body) {

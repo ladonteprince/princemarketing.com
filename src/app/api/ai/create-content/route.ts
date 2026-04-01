@@ -2,11 +2,20 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { claude, STRATEGIST_SYSTEM_PROMPT } from "@/lib/claude";
 import { checkRateLimit } from "@/lib/rate-limiter";
+import { compactMessages, type CompactableChatMessage } from "@/lib/chat-compaction";
 import { z } from "zod";
 
 const requestSchema = z.object({
   sessionId: z.string(),
   message: z.string().min(1),
+  history: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string(),
+      }),
+    )
+    .optional(),
   existingNodes: z
     .array(
       z.object({
@@ -77,7 +86,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
-    const { message, existingNodes } = parsed.data;
+    const { message, history, existingNodes } = parsed.data;
 
     const systemPrompt = WORKSPACE_SYSTEM_PROMPT.replace(
       "{existingNodes}",
@@ -86,16 +95,21 @@ export async function POST(request: Request) {
         : "0",
     );
 
+    // Build conversation history: compact old messages + append new user message
+    const fullHistory: CompactableChatMessage[] = [
+      ...(history ?? []),
+      { role: "user" as const, content: message },
+    ];
+    const compactedHistory = compactMessages(fullHistory);
+
     const response = await claude.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 2048,
       system: systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: message,
-        },
-      ],
+      messages: compactedHistory.map((m) => ({
+        role: m.role,
+        content: m.content,
+      })),
     });
 
     const fullText =

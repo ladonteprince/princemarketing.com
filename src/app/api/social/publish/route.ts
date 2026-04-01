@@ -6,9 +6,19 @@ import { isValidPlatform, PLATFORMS } from "@/lib/social/platforms";
 import { publishToplatform } from "@/lib/social/publish";
 import type { PlatformKey } from "@/lib/social/platforms";
 
+// Per-platform content can be a plain string or an object with title + description (YouTube)
+const platformContentValue = z.union([
+  z.string(),
+  z.object({
+    title: z.string().max(100, "YouTube title must be 100 characters or less"),
+    description: z.string().max(5000, "YouTube description must be 5000 characters or less"),
+  }),
+]);
+
 const publishSchema = z.object({
   content: z.string().min(1, "Content is required"),
   platforms: z.array(z.string()).min(1, "At least one platform required"),
+  platformContent: z.record(z.string(), platformContentValue).optional(),
   mediaUrl: z.string().url().optional(),
   calendarEntryId: z.string().optional(),
 });
@@ -31,7 +41,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { content, platforms, mediaUrl, calendarEntryId } = parsed.data;
+    const { content, platforms, platformContent, mediaUrl, calendarEntryId } = parsed.data;
 
     // Validate all requested platforms
     for (const p of platforms) {
@@ -66,8 +76,24 @@ export async function POST(request: Request) {
         continue;
       }
 
+      // Resolve per-platform content: use platformContent override if provided, else fall back to default
+      const override = platformContent?.[platformKey];
+      let resolvedContent = content;
+      let resolvedTitle: string | undefined;
+
+      if (override) {
+        if (typeof override === "string") {
+          resolvedContent = override;
+        } else {
+          // Object form with title + description (YouTube)
+          resolvedTitle = override.title;
+          resolvedContent = override.description;
+        }
+      }
+
       const result = await publishToplatform(platformKey, {
-        content,
+        content: resolvedContent,
+        title: resolvedTitle,
         mediaUrl,
         accessToken: connected.accessToken,
       });
