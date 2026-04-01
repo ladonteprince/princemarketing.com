@@ -143,6 +143,38 @@ body {
   transition: opacity var(--transition-page), transform var(--transition-page);
 }
 
+/* === Canvas Workspace === */
+/* Mobile: stack canvas and chat vertically */
+@media (max-width: 767px) {
+  .workspace-split {
+    flex-direction: column;
+  }
+  .workspace-split > .canvas-panel {
+    height: 50vh;
+    width: 100%;
+  }
+  .workspace-split > .chat-panel-wrapper {
+    height: 50vh;
+    width: 100% !important;
+    min-width: unset !important;
+    max-width: unset !important;
+  }
+}
+
+/* Canvas node glow on hover */
+.node-glow {
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.15);
+}
+
+/* Video editor timeline scrollbar */
+.timeline-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+.timeline-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-royal);
+  border-radius: 2px;
+}
+
 /* === Cinematic Sticky Pipeline === */
 /* Ensures each sticky section has a solid background to cover the one behind */
 [data-step] {

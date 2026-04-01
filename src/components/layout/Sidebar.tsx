@@ -10,6 +10,7 @@ import {
   Megaphone,
   BarChart3,
   MessageSquare,
+  Film,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -25,10 +26,11 @@ type NavItem = {
 };
 
 const NAV_ITEMS: ReadonlyArray<NavItem> = [
-  { label: "Overview", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Workspace", href: "/dashboard", icon: LayoutDashboard },
   { label: "Calendar", href: "/dashboard/calendar", icon: Calendar },
   { label: "Campaigns", href: "/dashboard/campaigns", icon: Megaphone },
   { label: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
+  { label: "Video Editor", href: "/dashboard/video/new", icon: Film },
   { label: "AI Strategist", href: "/dashboard/chat", icon: MessageSquare },
 ] as const;
 
