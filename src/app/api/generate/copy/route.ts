@@ -39,8 +39,20 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await princeAPI.generateCopy(parsed.data);
-    return NextResponse.json(result);
+    // Map 'type' to 'copyType' for .ai API compatibility
+    const apiParams = {
+      prompt: parsed.data.prompt,
+      copyType: parsed.data.type ?? "social",
+      tone: parsed.data.tone ?? "professional",
+    };
+    const result = await princeAPI.generateCopy(apiParams as any);
+    const inner = (result as any)?.data ?? result;
+    return NextResponse.json({
+      copy: inner.content ?? inner.resultContent ?? "",
+      content: inner.content ?? inner.resultContent ?? "",
+      refinedPrompt: inner.refinedPrompt,
+      score: inner.score,
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Copy generation failed";
