@@ -91,7 +91,7 @@ function SceneCard({
   return (
     <div
       className={`
-        group relative flex min-w-[280px] shrink-0 flex-col
+        group relative flex w-[280px] max-w-[320px] shrink-0 flex-col
         rounded-2xl border p-4 transition-all duration-200
         ${
           selected
@@ -456,6 +456,8 @@ function SceneCard({
               }
               className="h-1 w-full accent-royal"
               onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
             />
             <input
               type="range"
@@ -468,6 +470,8 @@ function SceneCard({
               }
               className="h-1 w-full accent-royal"
               onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
             />
           </div>
         </div>
@@ -666,6 +670,7 @@ export function VideoEditor({
   const [pendingSourceSceneId, setPendingSourceSceneId] = useState<string | null>(null);
   const [showAssetDrawer, setShowAssetDrawer] = useState(false);
   const [deletedScene, setDeletedScene] = useState<{scene: VideoScene; index: number} | null>(null);
+  const [includeAudio, setIncludeAudio] = useState(true);
 
   /* ─ Helpers ─ */
 
@@ -700,6 +705,8 @@ export function VideoEditor({
       mode: scene.mode,
       duration: scene.duration,
     };
+
+    body.includeAudio = includeAudio;
 
     if (scene.sourceImageUrl) {
       body.sourceImage = scene.sourceImageUrl;
@@ -1243,6 +1250,19 @@ export function VideoEditor({
           <Music size={16} className="text-royal" />
           <h4 className="text-xs font-semibold text-cloud">Audio Track</h4>
         </div>
+
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-ash">Native Audio</span>
+          </div>
+          <button
+            onClick={() => setIncludeAudio(!includeAudio)}
+            className={`relative h-5 w-9 rounded-full transition-colors ${includeAudio ? 'bg-royal' : 'bg-smoke'}`}
+          >
+            <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${includeAudio ? 'left-[18px]' : 'left-0.5'}`} />
+          </button>
+        </div>
+        <p className="text-[10px] text-ash/60 mt-1 mb-3">Video generation will {includeAudio ? 'include' : 'exclude'} ambient sound</p>
 
         {project.audioUrl ? (
           <div className="flex items-center gap-3 rounded-xl bg-slate/40 px-3 py-2.5 border border-smoke/40">
