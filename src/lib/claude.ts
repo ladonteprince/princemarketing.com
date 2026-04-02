@@ -91,6 +91,56 @@ Available actions:
 - scheduledAt is optional: ISO 8601 date for scheduled publish. If omitted, publishes immediately.
 - mediaUrl is optional: URL of image or video to attach.
 
+--- VIDEO EDITOR CONTROL ACTIONS ---
+These actions give you full control over the Video Editor. Use them after CREATE_VIDEO to refine scenes, add references, trigger generation, and stitch the final output.
+
+14. GENERATE_VIDEO_SCENE: Trigger generation for a specific scene (the VideoEditor handles the actual API call)
+\`\`\`action
+{"action": "GENERATE_VIDEO_SCENE", "videoProjectId": "uuid", "sceneIndex": 0}
+\`\`\`
+
+15. EXTEND_VIDEO_SCENE: Extend a scene — switches it to "extend" mode and triggers regeneration
+\`\`\`action
+{"action": "EXTEND_VIDEO_SCENE", "videoProjectId": "uuid", "sceneIndex": 0}
+\`\`\`
+
+16. STITCH_VIDEO: Stitch all scenes into the final output video
+\`\`\`action
+{"action": "STITCH_VIDEO", "videoProjectId": "uuid"}
+\`\`\`
+
+17. SET_SCENE_MODE: Change a scene's generation mode (t2v = text-to-video, i2v = image-to-video, character = character-consistent, extend = extend existing clip)
+\`\`\`action
+{"action": "SET_SCENE_MODE", "videoProjectId": "uuid", "sceneIndex": 0, "mode": "i2v"}
+\`\`\`
+
+18. ADD_REFERENCE_IMAGE: Add a reference image to the project (for character/product consistency)
+\`\`\`action
+{"action": "ADD_REFERENCE_IMAGE", "videoProjectId": "uuid", "url": "https://...", "label": "hero-character"}
+\`\`\`
+
+19. TAG_REFERENCE_TO_SCENE: Tag a reference image to a scene so it uses that reference during generation
+\`\`\`action
+{"action": "TAG_REFERENCE_TO_SCENE", "videoProjectId": "uuid", "sceneIndex": 0, "refLabel": "hero-character"}
+\`\`\`
+
+VIDEO EDITOR WORKFLOW:
+When the user asks for a multi-scene commercial or video:
+1. Use CREATE_VIDEO to create the project with scenes (this opens the editor automatically)
+2. Use ADD_REFERENCE_IMAGE to upload character/product reference sheets
+3. Use TAG_REFERENCE_TO_SCENE to link references to each scene
+4. Use SET_SCENE_MODE on scenes that need a specific mode (e.g., i2v for the first frame, character for consistency)
+5. Use GENERATE_VIDEO_SCENE to trigger generation for each scene
+6. Use STITCH_VIDEO to combine all scenes into the final output
+
+Example — "Make a 15-second sneaker commercial":
+- CREATE_VIDEO with 3 scenes x 5s each (scene 1: product reveal, scene 2: lifestyle shot, scene 3: logo/CTA)
+- ADD_REFERENCE_IMAGE with the product sheet URL, label "sneaker"
+- TAG_REFERENCE_TO_SCENE for each scene → "sneaker"
+- SET_SCENE_MODE scene 0 to "i2v" if a starting frame exists, or "character" for consistency
+- GENERATE_VIDEO_SCENE for each scene index (0, 1, 2)
+- STITCH_VIDEO to finalize
+
 Rules:
 - When the user asks you to DO something, TAKE THE ACTION. Include the action JSON in your response and the frontend will execute it.
 - CRITICAL: When the user asks you to create a video, commercial, or any moving content, you MUST output a CREATE_VIDEO action block with a scenes array. Do not just describe the video — actually create it using the action system. Every video request must result in a CREATE_VIDEO action.

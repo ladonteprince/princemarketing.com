@@ -100,6 +100,48 @@ const DistributeAction = z.object({
   scheduledAt: z.string().optional(),
 });
 
+// --- Video Editor Control Actions ---
+// WHY: These actions let the AI fully control the video editor workflow —
+// triggering generation, extending scenes, stitching, and managing references.
+
+const GenerateVideoSceneAction = z.object({
+  action: z.literal("GENERATE_VIDEO_SCENE"),
+  videoProjectId: z.string().uuid(),
+  sceneIndex: z.number().int().min(0).max(50),
+});
+
+const ExtendVideoSceneAction = z.object({
+  action: z.literal("EXTEND_VIDEO_SCENE"),
+  videoProjectId: z.string().uuid(),
+  sceneIndex: z.number().int().min(0).max(50),
+});
+
+const StitchVideoAction = z.object({
+  action: z.literal("STITCH_VIDEO"),
+  videoProjectId: z.string().uuid(),
+});
+
+const SetSceneModeAction = z.object({
+  action: z.literal("SET_SCENE_MODE"),
+  videoProjectId: z.string().uuid(),
+  sceneIndex: z.number().int().min(0).max(50),
+  mode: z.enum(["t2v", "i2v", "character", "extend"]),
+});
+
+const AddReferenceImageAction = z.object({
+  action: z.literal("ADD_REFERENCE_IMAGE"),
+  videoProjectId: z.string().uuid(),
+  url: z.string().url(),
+  label: z.string().max(100),
+});
+
+const TagReferenceToSceneAction = z.object({
+  action: z.literal("TAG_REFERENCE_TO_SCENE"),
+  videoProjectId: z.string().uuid(),
+  sceneIndex: z.number().int().min(0).max(50),
+  refLabel: z.string().max(100),
+});
+
 // Union of all valid actions — anything else is rejected
 export const ActionBlockSchema = z.discriminatedUnion("action", [
   CreateImageAction,
@@ -115,6 +157,12 @@ export const ActionBlockSchema = z.discriminatedUnion("action", [
   BuildStrategyAction,
   AudienceInsightAction,
   DistributeAction,
+  GenerateVideoSceneAction,
+  ExtendVideoSceneAction,
+  StitchVideoAction,
+  SetSceneModeAction,
+  AddReferenceImageAction,
+  TagReferenceToSceneAction,
 ]);
 
 export type ValidAction = z.infer<typeof ActionBlockSchema>;

@@ -54,6 +54,12 @@ type AgentAction = {
   mode?: string;
   sourceImage?: string;
   sourceVideo?: string;
+  // Video editor control fields
+  videoProjectId?: string;
+  sceneIndex?: number;
+  url?: string;
+  label?: string;
+  refLabel?: string;
 };
 
 type ChatPanelProps = {
@@ -367,6 +373,81 @@ async function executeAction(
       return executeAction(editAction, onCanvasAction, nodes, statusCallback);
     }
 
+    // --- Video Editor Control Actions ---
+    case "GENERATE_VIDEO_SCENE": {
+      if (!action.videoProjectId || action.sceneIndex == null) {
+        return { success: false, detail: "Missing videoProjectId or sceneIndex" };
+      }
+      onCanvasAction({
+        type: "generate-video-scene",
+        videoProjectId: action.videoProjectId,
+        sceneIndex: action.sceneIndex,
+      });
+      return { success: true, detail: `Scene ${action.sceneIndex + 1} generation triggered` };
+    }
+
+    case "EXTEND_VIDEO_SCENE": {
+      if (!action.videoProjectId || action.sceneIndex == null) {
+        return { success: false, detail: "Missing videoProjectId or sceneIndex" };
+      }
+      onCanvasAction({
+        type: "extend-video-scene",
+        videoProjectId: action.videoProjectId,
+        sceneIndex: action.sceneIndex,
+      });
+      return { success: true, detail: `Scene ${action.sceneIndex + 1} set to extend mode and regenerating` };
+    }
+
+    case "STITCH_VIDEO": {
+      if (!action.videoProjectId) {
+        return { success: false, detail: "Missing videoProjectId" };
+      }
+      onCanvasAction({
+        type: "stitch-video",
+        videoProjectId: action.videoProjectId,
+      });
+      return { success: true, detail: "Stitching all scenes into final video" };
+    }
+
+    case "SET_SCENE_MODE": {
+      if (!action.videoProjectId || action.sceneIndex == null || !action.mode) {
+        return { success: false, detail: "Missing videoProjectId, sceneIndex, or mode" };
+      }
+      onCanvasAction({
+        type: "set-scene-mode",
+        videoProjectId: action.videoProjectId,
+        sceneIndex: action.sceneIndex,
+        mode: action.mode as "t2v" | "i2v" | "character" | "extend",
+      });
+      return { success: true, detail: `Scene ${action.sceneIndex + 1} mode set to ${action.mode}` };
+    }
+
+    case "ADD_REFERENCE_IMAGE": {
+      if (!action.videoProjectId || !action.url || !action.label) {
+        return { success: false, detail: "Missing videoProjectId, url, or label" };
+      }
+      onCanvasAction({
+        type: "add-reference-image",
+        videoProjectId: action.videoProjectId,
+        url: action.url,
+        label: action.label,
+      });
+      return { success: true, detail: `Reference image "${action.label}" added to project` };
+    }
+
+    case "TAG_REFERENCE_TO_SCENE": {
+      if (!action.videoProjectId || action.sceneIndex == null || !action.refLabel) {
+        return { success: false, detail: "Missing videoProjectId, sceneIndex, or refLabel" };
+      }
+      onCanvasAction({
+        type: "tag-reference-to-scene",
+        videoProjectId: action.videoProjectId,
+        sceneIndex: action.sceneIndex,
+        refLabel: action.refLabel,
+      });
+      return { success: true, detail: `Reference "${action.refLabel}" tagged to scene ${action.sceneIndex + 1}` };
+    }
+
     default:
       return { success: false, detail: `Unknown action: ${action.action}` };
   }
@@ -382,6 +463,12 @@ const ACTION_LABELS: Record<string, { label: string; icon: typeof ImageIcon }> =
   SCHEDULE_POST: { label: "Scheduling post", icon: Calendar },
   PUBLISH_NOW: { label: "Publishing", icon: SendIcon },
   GET_ANALYTICS: { label: "Fetching analytics", icon: BarChart3 },
+  GENERATE_VIDEO_SCENE: { label: "Generating scene", icon: Video },
+  EXTEND_VIDEO_SCENE: { label: "Extending scene", icon: Video },
+  STITCH_VIDEO: { label: "Stitching video", icon: Video },
+  SET_SCENE_MODE: { label: "Setting scene mode", icon: Video },
+  ADD_REFERENCE_IMAGE: { label: "Adding reference image", icon: ImageIcon },
+  TAG_REFERENCE_TO_SCENE: { label: "Tagging reference to scene", icon: ImageIcon },
 };
 
 // Parse AI responses for structured content creation actions (legacy [NODE:...] markers)

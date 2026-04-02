@@ -167,6 +167,119 @@ export default function DashboardPage() {
           });
           break;
         }
+        case "generate-video-scene": {
+          setVideoProjects((prev) => {
+            const next = new Map(prev);
+            const project = next.get(action.videoProjectId);
+            if (!project) return prev;
+            const scenes = [...project.scenes];
+            if (scenes[action.sceneIndex]) {
+              scenes[action.sceneIndex] = {
+                ...scenes[action.sceneIndex],
+                status: "generating",
+              };
+              next.set(action.videoProjectId, { ...project, scenes });
+            }
+            return next;
+          });
+          break;
+        }
+        case "extend-video-scene": {
+          setVideoProjects((prev) => {
+            const next = new Map(prev);
+            const project = next.get(action.videoProjectId);
+            if (!project) return prev;
+            const scenes = [...project.scenes];
+            if (scenes[action.sceneIndex]) {
+              scenes[action.sceneIndex] = {
+                ...scenes[action.sceneIndex],
+                mode: "extend",
+                status: "generating",
+              };
+              next.set(action.videoProjectId, { ...project, scenes });
+            }
+            return next;
+          });
+          break;
+        }
+        case "stitch-video": {
+          // Set a flag on the project that the VideoEditor component watches to trigger stitching
+          setVideoProjects((prev) => {
+            const next = new Map(prev);
+            const project = next.get(action.videoProjectId);
+            if (!project) return prev;
+            next.set(action.videoProjectId, {
+              ...project,
+              // Convention: audioUrl starting with "__stitch__" signals the VideoEditor to stitch
+              audioUrl: project.audioUrl
+                ? project.audioUrl
+                : "__stitch__" + new Date().toISOString(),
+            });
+            return next;
+          });
+          // Ensure the editor is open so the stitch can execute
+          setActiveVideoProject(action.videoProjectId);
+          break;
+        }
+        case "set-scene-mode": {
+          setVideoProjects((prev) => {
+            const next = new Map(prev);
+            const project = next.get(action.videoProjectId);
+            if (!project) return prev;
+            const scenes = [...project.scenes];
+            if (scenes[action.sceneIndex]) {
+              scenes[action.sceneIndex] = {
+                ...scenes[action.sceneIndex],
+                mode: action.mode,
+              };
+              next.set(action.videoProjectId, { ...project, scenes });
+            }
+            return next;
+          });
+          break;
+        }
+        case "add-reference-image": {
+          setVideoProjects((prev) => {
+            const next = new Map(prev);
+            const project = next.get(action.videoProjectId);
+            if (!project) return prev;
+            const newRef = {
+              id: crypto.randomUUID(),
+              url: action.url,
+              label: action.label,
+            };
+            next.set(action.videoProjectId, {
+              ...project,
+              referenceImages: [...project.referenceImages, newRef],
+            });
+            return next;
+          });
+          break;
+        }
+        case "tag-reference-to-scene": {
+          setVideoProjects((prev) => {
+            const next = new Map(prev);
+            const project = next.get(action.videoProjectId);
+            if (!project) return prev;
+            const ref = project.referenceImages.find(
+              (r) => r.label === action.refLabel,
+            );
+            if (!ref) return prev;
+            const scenes = [...project.scenes];
+            if (scenes[action.sceneIndex]) {
+              scenes[action.sceneIndex] = {
+                ...scenes[action.sceneIndex],
+                referenceImageIds: [
+                  ...scenes[action.sceneIndex].referenceImageIds,
+                  ref.id,
+                ],
+              };
+              next.set(action.videoProjectId, { ...project, scenes });
+            }
+            return next;
+          });
+          break;
+        }
       }
     },
     [nodes],

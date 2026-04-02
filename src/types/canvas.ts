@@ -63,4 +63,10 @@ export type CanvasAction =
   | { type: "update-node"; nodeId: string; updates: Partial<ContentNode> }
   | { type: "open-video-editor"; videoProjectId: string }
   | { type: "add-video-scene"; videoProjectId: string; scene: { prompt: string; mode?: VideoSceneMode; duration?: number } }
-  | { type: "set-video-audio"; videoProjectId: string; audioDescription: string };
+  | { type: "set-video-audio"; videoProjectId: string; audioDescription: string }
+  | { type: "generate-video-scene"; videoProjectId: string; sceneIndex: number }
+  | { type: "extend-video-scene"; videoProjectId: string; sceneIndex: number }
+  | { type: "stitch-video"; videoProjectId: string }
+  | { type: "set-scene-mode"; videoProjectId: string; sceneIndex: number; mode: VideoSceneMode }
+  | { type: "add-reference-image"; videoProjectId: string; url: string; label: string }
+  | { type: "tag-reference-to-scene"; videoProjectId: string; sceneIndex: number; refLabel: string };
