@@ -161,7 +161,7 @@ function NodeCard({
         {node.thumbnail ? (
           <>
             <img
-              src={node.thumbnail}
+              src={node.thumbnail?.startsWith("https://princemarketing.ai/") ? `/api/proxy/image?url=${encodeURIComponent(node.thumbnail)}` : node.thumbnail}
               alt={node.title}
               className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             />

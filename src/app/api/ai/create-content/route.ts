@@ -87,6 +87,14 @@ For video requests, break the video into scenes:
 
 For campaign requests, return multiple nodes of different types that form a connected pipeline.
 
+IMPORTANT REMINDERS:
+- When the user asks for a video or commercial, you MUST output a \`\`\`action block with "action": "CREATE_VIDEO" and a "scenes" array. Never just describe what the video would look like — actually create it.
+- Example for a 15-second commercial:
+\`\`\`action
+{"action": "CREATE_VIDEO", "prompt": "15-second luxury sneaker commercial", "scenes": [{"prompt": "Close-up of sneaker on reflective surface, dramatic lighting", "duration": 5}, {"prompt": "Model walking in urban setting wearing the sneakers, cinematic slow motion", "duration": 5}, {"prompt": "Logo reveal with tagline, premium brand aesthetic", "duration": 5}]}
+\`\`\`
+- When the user asks for multiple things (images + video, copy + images, etc.), output ALL action blocks in a single response. Do not stop after the first action.
+
 If the user is just chatting or asking questions, respond normally WITHOUT any action or JSON blocks.`;
 
 export async function POST(request: Request) {

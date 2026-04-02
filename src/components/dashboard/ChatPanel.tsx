@@ -103,11 +103,12 @@ async function executeAction(
           if (n.position.y + 200 > yPos) yPos = n.position.y + 200;
         }
 
+        const imageUrl = data.url ?? data.imageUrl ?? data.data?.imageUrl;
         const node: ContentNode = {
           id,
           type: "image",
           title: action.prompt?.slice(0, 50) ?? "Generated Image",
-          thumbnail: data.url ?? data.imageUrl ?? data.data?.imageUrl,
+          thumbnail: imageUrl ? `/api/proxy/image?url=${encodeURIComponent(imageUrl)}` : undefined,
           status: "draft",
           prompt: action.prompt,
           createdAt: new Date().toISOString(),

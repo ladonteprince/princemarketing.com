@@ -6,6 +6,23 @@ type ChatMessageProps = {
   userName?: string;
 };
 
+// WHY: Simple regex-based markdown renderer — avoids adding a dependency.
+// Handles bold, italic, numbered lists, and bullet points.
+function renderMarkdown(text: string): React.ReactElement[] {
+  return text.split("\n").map((line, i) => {
+    // Bold: **text** -> <strong>text</strong>
+    let html = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    // Italic: *text* -> <em>text</em>
+    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    // Numbered list: 1. text -> styled list item
+    html = html.replace(/^(\d+)\.\s/, '<span class="text-royal font-semibold mr-1">$1.</span>');
+    // Bullet: - text -> styled bullet
+    html = html.replace(/^-\s/, '<span class="text-royal mr-1">\u2022</span>');
+
+    return <p key={i} className="mb-1" dangerouslySetInnerHTML={{ __html: html }} />;
+  });
+}
+
 export function ChatMessage({ role, content, userName }: ChatMessageProps) {
   const isAssistant = role === "assistant";
 
@@ -37,12 +54,7 @@ export function ChatMessage({ role, content, userName }: ChatMessageProps) {
           }
         `}
       >
-        {/* WHY: Render line breaks in AI responses for readability */}
-        {content.split("\n").map((line, i) => (
-          <p key={i} className={i > 0 ? "mt-2" : ""}>
-            {line}
-          </p>
-        ))}
+        {renderMarkdown(content)}
       </div>
     </div>
   );

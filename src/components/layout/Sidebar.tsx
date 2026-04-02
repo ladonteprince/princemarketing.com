@@ -10,6 +10,7 @@ import {
   Megaphone,
   BarChart3,
   Film,
+  FolderOpen,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -32,6 +33,7 @@ const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { label: "Campaigns", href: "/dashboard/campaigns", icon: Megaphone },
   { label: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
   { label: "Video Editor", href: "/dashboard/video/new", icon: Film },
+  { label: "Assets", href: "/dashboard/assets", icon: FolderOpen },
 ] as const;
 
 const BOTTOM_ITEMS: ReadonlyArray<NavItem> = [

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Send } from "lucide-react";
 import { Canvas } from "@/components/dashboard/Canvas";
 import { ChatPanel } from "@/components/dashboard/ChatPanel";
@@ -42,6 +42,25 @@ export default function DashboardPage() {
           );
           break;
         case "open-video-editor":
+          // Ensure the video project exists before opening the editor
+          setVideoProjects((prev) => {
+            if (!prev.has(action.videoProjectId)) {
+              const next = new Map(prev);
+              // Find matching canvas node for metadata
+              const matchingNode = nodes.find(
+                (n) => n.videoProjectId === action.videoProjectId,
+              );
+              next.set(action.videoProjectId, {
+                id: action.videoProjectId,
+                title: matchingNode?.title ?? "Video Project",
+                scenes: [],
+                referenceImages: [],
+                createdAt: matchingNode?.createdAt ?? new Date().toISOString(),
+              });
+              return next;
+            }
+            return prev;
+          });
           setActiveVideoProject(action.videoProjectId);
           break;
         case "add-video-scene": {
@@ -84,7 +103,7 @@ export default function DashboardPage() {
         }
       }
     },
-    [],
+    [nodes],
   );
 
   const handleNodeClick = useCallback(
@@ -135,6 +154,15 @@ export default function DashboardPage() {
     ? videoProjects.get(activeVideoProject)
     : null;
 
+  const videoEditorRef = useRef<HTMLDivElement>(null);
+
+  // Scroll video editor into view when it becomes active
+  useEffect(() => {
+    if (activeProject && videoEditorRef.current) {
+      videoEditorRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [activeProject]);
+
   return (
     <div className="flex h-screen flex-col">
       {/* KPI summary bar */}
@@ -142,7 +170,7 @@ export default function DashboardPage() {
 
       {/* Video editor overlay */}
       {activeProject && (
-        <div className="border-b border-smoke">
+        <div ref={videoEditorRef} className="border-b border-smoke">
           <ErrorBoundary>
             <VideoEditor
               project={activeProject}
@@ -197,7 +225,7 @@ export default function DashboardPage() {
                   >
                     {node.thumbnail ? (
                       <img
-                        src={node.thumbnail}
+                        src={node.thumbnail?.startsWith("https://princemarketing.ai/") ? `/api/proxy/image?url=${encodeURIComponent(node.thumbnail)}` : node.thumbnail}
                         alt={node.title}
                         className="mb-2.5 h-24 w-full rounded-xl object-cover"
                       />
