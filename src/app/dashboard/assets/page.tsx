@@ -145,8 +145,8 @@ function AssetCard({
           </div>
         )}
 
-        {/* Hover overlay with actions — z-20 above play button z-10 */}
-        <div className="absolute inset-0 z-20 flex items-end justify-end gap-1.5 bg-gradient-to-t from-void/70 via-transparent to-transparent p-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100 pointer-events-none [&>*]:pointer-events-auto [&>*>*]:pointer-events-auto">
+        {/* Hover overlay with actions — top-right so they don't cover video controls */}
+        <div className="absolute top-0 right-0 z-20 flex items-start justify-end gap-1.5 p-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
           {displayUrl && (
             <>
               {(asset.type === "video" || asset.type === "image") && (
