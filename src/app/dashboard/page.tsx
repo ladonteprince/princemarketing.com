@@ -272,11 +272,20 @@ export default function DashboardPage() {
                   className="shrink-0 overflow-hidden rounded-lg transition-transform hover:scale-105 hover:ring-1 hover:ring-royal/40"
                   title={asset.name || "Open in editor"}
                 >
-                  <img
-                    src={src}
-                    alt={asset.name || "Asset"}
-                    className="h-16 w-16 rounded-lg object-cover"
-                  />
+                  {asset.type === "video" ? (
+                    <video
+                      src={src}
+                      className="h-16 w-16 rounded-lg object-cover"
+                      muted
+                      preload="metadata"
+                    />
+                  ) : (
+                    <img
+                      src={src}
+                      alt={asset.name || "Asset"}
+                      className="h-16 w-16 rounded-lg object-cover"
+                    />
+                  )}
                 </button>
               );
             })}
