@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Proxy images from princemarketing.ai so they load without CORS issues
+// Proxy media (images + videos) from princemarketing.ai to avoid CORS issues
 export async function GET(request: NextRequest) {
   const url = request.nextUrl.searchParams.get("url");
   if (!url || !url.startsWith("https://princemarketing.ai/")) {
@@ -10,12 +10,26 @@ export async function GET(request: NextRequest) {
   try {
     const response = await fetch(url);
     if (!response.ok) {
-      return NextResponse.json({ error: "Image not found" }, { status: 404 });
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const buffer = await response.arrayBuffer();
-    const contentType = response.headers.get("content-type") ?? "image/jpeg";
+    const contentType = response.headers.get("content-type") ?? "application/octet-stream";
+    const contentLength = response.headers.get("content-length");
 
+    // For videos, stream the response instead of buffering entire file
+    if (contentType.startsWith("video/") && response.body) {
+      const headers: Record<string, string> = {
+        "Content-Type": contentType,
+        "Cache-Control": "public, max-age=86400",
+        "Accept-Ranges": "bytes",
+      };
+      if (contentLength) headers["Content-Length"] = contentLength;
+
+      return new NextResponse(response.body, { headers });
+    }
+
+    // For images, buffer and return
+    const buffer = await response.arrayBuffer();
     return new NextResponse(buffer, {
       headers: {
         "Content-Type": contentType,
@@ -23,6 +37,6 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch {
-    return NextResponse.json({ error: "Failed to fetch image" }, { status: 502 });
+    return NextResponse.json({ error: "Failed to fetch media" }, { status: 502 });
   }
 }

@@ -77,18 +77,22 @@ function AssetCard({
             loading="lazy"
           />
         ) : asset.type === "video" && displayUrl ? (
-          <video
-            src={displayUrl}
-            className="h-full w-full object-cover"
-            muted
-            playsInline
-            onMouseEnter={(e) => (e.target as HTMLVideoElement).play().catch(() => {})}
-            onMouseLeave={(e) => {
-              const v = e.target as HTMLVideoElement;
-              v.pause();
-              v.currentTime = 0;
-            }}
-          />
+          <div className="relative h-full w-full">
+            <video
+              src={displayUrl}
+              className="h-full w-full object-cover"
+              controls
+              playsInline
+              preload="metadata"
+              poster=""
+            />
+            {/* Play button overlay (shows until user interacts) */}
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-void/30 transition-opacity group-hover:opacity-0">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-royal/90 shadow-lg shadow-royal/30">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21" /></svg>
+              </div>
+            </div>
+          </div>
         ) : (
           <div className="flex h-full w-full items-center justify-center">
             <Icon size={32} strokeWidth={1.2} className="text-ash/40" />
