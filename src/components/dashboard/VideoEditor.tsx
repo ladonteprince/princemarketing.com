@@ -1339,7 +1339,7 @@ export function VideoEditor({
             Reference Images
           </h4>
           <span className="text-[10px] text-ash">
-            @image tags for character/product consistency
+            @image tags for character/product consistency {selectedSceneId ? "· click to tag to selected scene" : "· select a scene first"}
           </span>
           <ChevronDown
             size={12}
@@ -1349,10 +1349,28 @@ export function VideoEditor({
 
         {showRefSection && (
           <div className="flex gap-2.5 flex-wrap">
-            {refs.map((img, i) => (
+            {refs.map((img, i) => {
+              const selectedScene = project.scenes.find((s) => s.id === selectedSceneId);
+              const isTaggedToSelected = selectedScene?.referenceImageIds.includes(img.id) ?? false;
+              return (
               <div
                 key={img.id}
-                className="relative w-20 h-20 rounded-xl overflow-hidden border border-smoke/60 group/ref hover:border-royal/40 transition-colors"
+                onClick={() => {
+                  if (!selectedSceneId) return;
+                  const scene = project.scenes.find((s) => s.id === selectedSceneId);
+                  if (!scene) return;
+                  const has = scene.referenceImageIds.includes(img.id);
+                  updateScene(selectedSceneId, {
+                    referenceImageIds: has
+                      ? scene.referenceImageIds.filter((id) => id !== img.id)
+                      : [...scene.referenceImageIds, img.id],
+                  });
+                }}
+                className={`relative w-20 h-20 rounded-xl overflow-hidden border group/ref transition-colors cursor-pointer ${
+                  isTaggedToSelected
+                    ? "border-royal ring-2 ring-royal/40"
+                    : "border-smoke/60 hover:border-royal/40"
+                }`}
               >
                 <img
                   src={img.url}
@@ -1386,12 +1404,13 @@ export function VideoEditor({
                     handleUpdateRefLabel(img.id, e.target.value)
                   }
                   className="absolute bottom-0 w-full bg-void/80 backdrop-blur-sm text-[9px] text-center py-0.5 text-cloud placeholder:text-ash/50 border-0 outline-none"
+                  onClick={(e) => e.stopPropagation()}
                 />
               </div>
-            ))}
+            );})}
 
             {/* Add reference image button */}
-            {refs.length < 3 && (
+            {refs.length < 9 && (
               <button
                 onClick={handleAddRefImage}
                 className="
