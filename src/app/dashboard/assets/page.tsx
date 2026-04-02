@@ -14,6 +14,7 @@ import {
   Loader2,
   AlertCircle,
   ExternalLink,
+  Film,
 } from "lucide-react";
 
 type AssetType = "image" | "video" | "audio" | "copy";
@@ -44,6 +45,23 @@ function proxyUrl(url: string): string {
     return `/api/proxy/image?url=${encodeURIComponent(url)}`;
   }
   return url;
+}
+
+function handleUseInEditor(asset: Asset) {
+  if (asset.type === "video" && asset.url) {
+    localStorage.setItem("pm-editor-import", JSON.stringify({
+      type: "video",
+      url: asset.url,
+      prompt: asset.prompt,
+    }));
+  } else if (asset.type === "image" && asset.url) {
+    localStorage.setItem("pm-editor-import", JSON.stringify({
+      type: "image",
+      url: asset.url,
+      prompt: asset.prompt,
+    }));
+  }
+  window.location.href = "/dashboard/video/new";
 }
 
 function AssetCard({
@@ -77,21 +95,31 @@ function AssetCard({
             loading="lazy"
           />
         ) : asset.type === "video" && displayUrl ? (
-          <div className="relative h-full w-full">
+          <div className="relative h-full w-full group/video">
             <video
+              ref={(el) => { if (el) el.dataset.assetId = asset.id; }}
               src={displayUrl}
               className="h-full w-full object-cover"
               controls
               playsInline
               preload="metadata"
-              poster=""
             />
-            {/* Play button overlay (shows until user interacts) */}
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-void/30 transition-opacity group-hover:opacity-0">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-royal/90 shadow-lg shadow-royal/30">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21" /></svg>
+            {/* Clickable play button that starts video */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                const video = (e.currentTarget.parentElement?.querySelector("video") as HTMLVideoElement);
+                if (video) {
+                  video.play().catch(() => {});
+                  e.currentTarget.style.display = "none";
+                }
+              }}
+              className="absolute inset-0 flex items-center justify-center bg-void/30 transition-opacity cursor-pointer hover:bg-void/20"
+            >
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-royal/90 shadow-lg shadow-royal/30 transition-transform hover:scale-110">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21" /></svg>
               </div>
-            </div>
+            </button>
           </div>
         ) : (
           <div className="flex h-full w-full items-center justify-center">
@@ -112,6 +140,15 @@ function AssetCard({
         <div className="absolute inset-0 flex items-end justify-end gap-1.5 bg-gradient-to-t from-void/70 via-transparent to-transparent p-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
           {displayUrl && (
             <>
+              {(asset.type === "video" || asset.type === "image") && (
+                <button
+                  onClick={() => handleUseInEditor(asset)}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-graphite/90 text-cloud backdrop-blur-sm transition-colors hover:bg-royal cursor-pointer"
+                  title="Use in Video Editor"
+                >
+                  <Film size={14} strokeWidth={1.5} />
+                </button>
+              )}
               <button
                 onClick={() => onCopyUrl(asset.url!)}
                 className="flex h-8 w-8 items-center justify-center rounded-lg bg-graphite/90 text-cloud backdrop-blur-sm transition-colors hover:bg-royal cursor-pointer"

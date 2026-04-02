@@ -24,6 +24,35 @@ export default function VideoEditorPage() {
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(project.title);
 
+  // Import asset from Assets page via localStorage
+  useEffect(() => {
+    const importData = localStorage.getItem("pm-editor-import");
+    if (importData) {
+      localStorage.removeItem("pm-editor-import");
+      try {
+        const imported = JSON.parse(importData);
+        const newScene: VideoScene = {
+          id: crypto.randomUUID(),
+          prompt: imported.prompt ?? "Imported asset",
+          videoUrl: imported.type === "video" ? imported.url : undefined,
+          sourceImageUrl: imported.type === "image" ? imported.url : undefined,
+          duration: 5,
+          trimStart: 0,
+          trimEnd: 5,
+          status: imported.type === "video" ? "ready" : "generating",
+          mode: imported.type === "image" ? "i2v" : "t2v",
+          referenceImageIds: [],
+          versions: [],
+        };
+        setProject(prev => ({
+          ...prev,
+          title: imported.prompt?.slice(0, 40) ?? prev.title,
+          scenes: [...prev.scenes, newScene],
+        }));
+      } catch { /* ignore corrupt data */ }
+    }
+  }, []);
+
   // TODO: Load project from database if it exists
   // useEffect(() => {
   //   fetch(`/api/video/project/${projectId}`)
