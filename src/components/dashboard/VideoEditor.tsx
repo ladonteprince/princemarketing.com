@@ -715,6 +715,8 @@ export function VideoEditor({
   const [showAssetDrawer, setShowAssetDrawer] = useState(initialDrawerOpen ?? false);
   const [deletedScene, setDeletedScene] = useState<{scene: VideoScene; index: number} | null>(null);
   const [includeAudio, setIncludeAudio] = useState(true);
+  const [generatingMusic, setGeneratingMusic] = useState(false);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
 
   /* ─ Helpers ─ */
 
@@ -987,12 +989,38 @@ export function VideoEditor({
     audioInputRef.current?.click();
   }
 
-  function handleAudioFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleAudioFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    updateProject({ audioUrl: url });
-    // In production: upload to storage, get permanent URL
+
+    // Set blob URL for immediate local preview
+    const blobUrl = URL.createObjectURL(file);
+    updateProject({ audioUrl: blobUrl });
+
+    // Upload to .ai for permanent URL (needed by stitch backend)
+    setUploadingAudio(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/upload/audio", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.audioUrl) {
+          // Replace blob URL with permanent server URL
+          URL.revokeObjectURL(blobUrl);
+          updateProject({ audioUrl: data.audioUrl });
+        }
+      }
+    } catch {
+      // Blob URL still works for local preview; stitch will fail without server URL
+    } finally {
+      setUploadingAudio(false);
+    }
   }
 
   function handleRemoveAudio() {
@@ -1000,22 +1028,70 @@ export function VideoEditor({
   }
 
   async function handleGenerateMusic() {
-    // Placeholder: call music generation API
+    setGeneratingMusic(true);
     try {
+      // Build a music prompt from scene descriptions
       const res = await fetch("/api/generate/music", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId: project.id,
           scenes: project.scenes.map((s) => s.prompt),
+          duration: Math.max(
+            15,
+            Math.round(
+              project.scenes.reduce((sum, s) => sum + (s.trimEnd - s.trimStart), 0),
+            ),
+          ),
         }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.audioUrl) updateProject({ audioUrl: data.audioUrl });
+
+      if (!res.ok) return;
+
+      const data = await res.json();
+      const generationId = data.generationId;
+
+      if (!generationId) return;
+
+      // Poll for completion (audio generation is async on .ai)
+      const pollUrl = data.pollUrl ?? `/api/stream/${generationId}`;
+      let attempts = 0;
+      const maxAttempts = 120; // 2 minutes at 1s intervals
+
+      const poll = async (): Promise<string | null> => {
+        while (attempts < maxAttempts) {
+          attempts++;
+          await new Promise((r) => setTimeout(r, 1000));
+
+          try {
+            const pollRes = await fetch(pollUrl);
+            if (!pollRes.ok) continue;
+
+            const pollData = await pollRes.json();
+            const status = pollData.status ?? pollData.data?.status;
+            const resultUrl = pollData.resultUrl ?? pollData.data?.resultUrl;
+
+            if (status === "passed" || status === "completed") {
+              return resultUrl ?? null;
+            }
+            if (status === "failed") {
+              return null;
+            }
+          } catch {
+            // Retry on network error
+          }
+        }
+        return null;
+      };
+
+      const audioUrl = await poll();
+      if (audioUrl) {
+        updateProject({ audioUrl });
       }
     } catch {
-      // Would show toast
+      // Generation failed silently
+    } finally {
+      setGeneratingMusic(false);
     }
   }
 
@@ -1345,15 +1421,25 @@ export function VideoEditor({
           <div className="flex gap-2">
             <button
               onClick={handleGenerateMusic}
-              className="flex items-center gap-1.5 rounded-xl bg-royal/10 px-3.5 py-2.5 text-xs font-medium text-royal hover:bg-royal/20 transition-colors cursor-pointer"
+              disabled={generatingMusic}
+              className="flex items-center gap-1.5 rounded-xl bg-royal/10 px-3.5 py-2.5 text-xs font-medium text-royal hover:bg-royal/20 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Wand2 size={12} /> Generate Music
+              {generatingMusic ? (
+                <><Loader2 size={12} className="animate-spin" /> Generating...</>
+              ) : (
+                <><Wand2 size={12} /> Generate Music</>
+              )}
             </button>
             <button
               onClick={handleUploadAudio}
-              className="flex items-center gap-1.5 rounded-xl bg-slate/80 px-3.5 py-2.5 text-xs text-ash hover:text-cloud hover:bg-smoke transition-colors cursor-pointer"
+              disabled={uploadingAudio}
+              className="flex items-center gap-1.5 rounded-xl bg-slate/80 px-3.5 py-2.5 text-xs text-ash hover:text-cloud hover:bg-smoke transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Upload size={12} /> Upload Audio
+              {uploadingAudio ? (
+                <><Loader2 size={12} className="animate-spin" /> Uploading...</>
+              ) : (
+                <><Upload size={12} /> Upload Audio</>
+              )}
             </button>
           </div>
         )}
