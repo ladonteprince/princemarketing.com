@@ -632,6 +632,7 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
           message: content,
           history,
           existingNodes: nodes.map((n) => ({ id: n.id, type: n.type, title: n.title })),
+          fetchAssets: true,
         }),
       });
 

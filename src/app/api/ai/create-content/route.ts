@@ -175,6 +175,26 @@ export async function POST(request: Request) {
       console.error("[CreateContent] Failed to build analytics context:", err);
     }
 
+    // Fetch user's existing assets so the AI can reference them
+    let assetsContext = "";
+    try {
+      const assetRes = await fetch(`${process.env.PRINCE_API_URL || "https://princemarketing.ai"}/api/v1/user/generations?limit=10`, {
+        headers: { "x-api-key": process.env.PRINCE_API_KEY || "" },
+      });
+      if (assetRes.ok) {
+        const assetData = await assetRes.json();
+        const gens = assetData?.data?.generations ?? [];
+        const passed = gens.filter((g: any) => g.status === "passed" || g.status === "completed");
+        if (passed.length > 0) {
+          assetsContext = `\n\nUser's existing assets (use these URLs for ADD_REFERENCE_IMAGE when the user wants character/product consistency):\n${
+            passed.map((g: any, i: number) => `${i+1}. [${g.type}] "${g.prompt?.slice(0,60)}..." — URL: ${g.resultUrl}`).join("\n")
+          }`;
+        }
+      }
+    } catch (err) {
+      console.error("[CreateContent] Failed to fetch assets:", err);
+    }
+
     // WHY: Sanitize external social content before injecting into the system prompt.
     // Social posts are user-generated and could contain prompt injection payloads.
     const safeSocialContext = socialContext
@@ -196,7 +216,8 @@ export async function POST(request: Request) {
       : "")
     + (analyticsContext
       ? `\n\nUser's recent analytics (reference this proactively when relevant):\n${analyticsContext}\nWhen the user asks to create content, suggest using GENERATE_VARIANTS to get A/B options. When they ask about performance, use GET_ANALYTICS for deep insights.`
-      : "");
+      : "")
+    + assetsContext;
 
     // Audit log: track what went into the system prompt (metadata only, no PII)
     auditPromptBuild(
