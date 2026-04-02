@@ -84,7 +84,7 @@ function AssetCard({
   const displayUrl = asset.url ? proxyUrl(asset.url) : null;
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-smoke bg-graphite transition-all duration-200 hover:border-royal/30 hover:shadow-lg hover:shadow-royal/5">
+    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-smoke bg-graphite transition-all duration-200 hover:border-royal/30 hover:shadow-lg hover:shadow-royal/5" data-video-playing="false">
       {/* Thumbnail / Preview */}
       <div className="relative aspect-square w-full overflow-hidden bg-slate/30">
         {asset.type === "image" && displayUrl ? (
@@ -100,11 +100,22 @@ function AssetCard({
               ref={(el) => {
                 if (!el) return;
                 el.dataset.assetId = asset.id;
-                // Show overlay again when video pauses or ends
-                const overlay = el.nextElementSibling as HTMLElement;
-                const show = () => { if (overlay) overlay.style.display = ""; el.controls = false; };
-                el.onpause = show;
-                el.onended = () => { el.currentTime = 0; show(); };
+                const card = el.closest('[data-video-playing]') as HTMLElement;
+                const overlay = card?.querySelector('[data-play-overlay]') as HTMLElement;
+                el.onplay = () => {
+                  if (card) card.dataset.videoPlaying = "true";
+                };
+                el.onpause = () => {
+                  if (card) card.dataset.videoPlaying = "false";
+                  if (overlay) overlay.style.display = "";
+                  el.controls = false;
+                };
+                el.onended = () => {
+                  el.currentTime = 0;
+                  if (card) card.dataset.videoPlaying = "false";
+                  if (overlay) overlay.style.display = "";
+                  el.controls = false;
+                };
               }}
               src={displayUrl}
               className="h-full w-full object-cover"
@@ -113,10 +124,11 @@ function AssetCard({
             />
             {/* Clickable play button — no native controls until playing */}
             <button
+              data-play-overlay
               onClick={(e) => {
                 e.stopPropagation();
                 const btn = e.currentTarget as HTMLElement;
-                const video = btn.previousElementSibling as HTMLVideoElement;
+                const video = btn.closest('[data-video-playing]')?.querySelector("video") as HTMLVideoElement;
                 if (video) {
                   video.controls = true;
                   btn.style.display = "none";
@@ -145,8 +157,8 @@ function AssetCard({
           </div>
         )}
 
-        {/* Hover overlay with actions — top-right so they don't cover video controls */}
-        <div className="absolute top-0 right-0 z-20 flex items-start justify-end gap-1.5 p-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+        {/* Hover overlay with actions — hidden while video is playing */}
+        <div className="absolute top-0 right-0 z-20 flex items-start justify-end gap-1.5 p-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-data-[video-playing=true]:!hidden">
           {displayUrl && (
             <>
               {(asset.type === "video" || asset.type === "image") && (
