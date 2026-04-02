@@ -115,12 +115,12 @@ function AssetCard({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                const video = e.currentTarget.previousElementSibling as HTMLVideoElement;
+                const btn = e.currentTarget as HTMLElement;
+                const video = btn.previousElementSibling as HTMLVideoElement;
                 if (video) {
                   video.controls = true;
-                  video.play().then(() => {
-                    (e.currentTarget as HTMLElement).style.display = "none";
-                  }).catch(() => {});
+                  btn.style.display = "none";
+                  video.play().catch(() => { btn.style.display = ""; video.controls = false; });
                 }
               }}
               className="absolute inset-0 z-10 flex items-center justify-center bg-void/30 transition-opacity cursor-pointer hover:bg-void/20"
