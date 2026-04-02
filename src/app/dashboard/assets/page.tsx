@@ -97,24 +97,33 @@ function AssetCard({
         ) : asset.type === "video" && displayUrl ? (
           <div className="relative h-full w-full group/video">
             <video
-              ref={(el) => { if (el) el.dataset.assetId = asset.id; }}
+              ref={(el) => {
+                if (!el) return;
+                el.dataset.assetId = asset.id;
+                // Show overlay again when video pauses or ends
+                const overlay = el.nextElementSibling as HTMLElement;
+                const show = () => { if (overlay) overlay.style.display = ""; el.controls = false; };
+                el.onpause = show;
+                el.onended = () => { el.currentTime = 0; show(); };
+              }}
               src={displayUrl}
               className="h-full w-full object-cover"
-              controls
               playsInline
-              preload="metadata"
+              preload="auto"
             />
-            {/* Clickable play button that starts video */}
+            {/* Clickable play button — no native controls until playing */}
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                const video = (e.currentTarget.parentElement?.querySelector("video") as HTMLVideoElement);
+                const video = e.currentTarget.previousElementSibling as HTMLVideoElement;
                 if (video) {
-                  video.play().catch(() => {});
-                  e.currentTarget.style.display = "none";
+                  video.controls = true;
+                  video.play().then(() => {
+                    (e.currentTarget as HTMLElement).style.display = "none";
+                  }).catch(() => {});
                 }
               }}
-              className="absolute inset-0 flex items-center justify-center bg-void/30 transition-opacity cursor-pointer hover:bg-void/20"
+              className="absolute inset-0 z-10 flex items-center justify-center bg-void/30 transition-opacity cursor-pointer hover:bg-void/20"
             >
               <div className="flex h-14 w-14 items-center justify-center rounded-full bg-royal/90 shadow-lg shadow-royal/30 transition-transform hover:scale-110">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21" /></svg>
@@ -136,8 +145,8 @@ function AssetCard({
           </div>
         )}
 
-        {/* Hover overlay with actions */}
-        <div className="absolute inset-0 flex items-end justify-end gap-1.5 bg-gradient-to-t from-void/70 via-transparent to-transparent p-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+        {/* Hover overlay with actions — z-20 above play button z-10 */}
+        <div className="absolute inset-0 z-20 flex items-end justify-end gap-1.5 bg-gradient-to-t from-void/70 via-transparent to-transparent p-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100 pointer-events-none [&>*]:pointer-events-auto [&>*>*]:pointer-events-auto">
           {displayUrl && (
             <>
               {(asset.type === "video" || asset.type === "image") && (

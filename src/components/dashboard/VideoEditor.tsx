@@ -210,16 +210,18 @@ function SceneCard({
           <div className="relative h-full w-full">
             {scene.videoUrl ? (
               <video
+                ref={(el) => {
+                  if (!el) return;
+                  const overlay = el.nextElementSibling as HTMLElement;
+                  const show = () => { if (overlay) overlay.style.display = ""; el.controls = false; };
+                  el.onpause = show;
+                  el.onended = () => { el.currentTime = 0; show(); };
+                }}
                 src={scene.videoUrl}
                 className="h-full w-full object-cover"
                 muted
-                loop
-                onMouseEnter={(e) => (e.target as HTMLVideoElement).play()}
-                onMouseLeave={(e) => {
-                  const v = e.target as HTMLVideoElement;
-                  v.pause();
-                  v.currentTime = 0;
-                }}
+                playsInline
+                preload="auto"
               />
             ) : (
               <img
@@ -228,12 +230,26 @@ function SceneCard({
                 className="h-full w-full object-cover"
               />
             )}
-            {/* Play overlay */}
-            <div className="absolute inset-0 flex items-center justify-center bg-void/20 opacity-0 group-hover:opacity-100 transition-opacity">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-void/60 backdrop-blur-sm">
-                <Play size={18} strokeWidth={2} className="text-white ml-0.5" />
-              </div>
-            </div>
+            {/* Click-to-play overlay — no native controls until playing */}
+            {scene.videoUrl && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const video = e.currentTarget.previousElementSibling as HTMLVideoElement;
+                  if (video) {
+                    video.controls = true;
+                    video.play().then(() => {
+                      (e.currentTarget as HTMLElement).style.display = "none";
+                    }).catch(() => {});
+                  }
+                }}
+                className="absolute inset-0 flex items-center justify-center bg-void/30 transition-opacity cursor-pointer hover:bg-void/20"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-royal/90 shadow-lg shadow-royal/30 transition-transform hover:scale-110">
+                  <Play size={18} strokeWidth={2} className="text-white ml-0.5" />
+                </div>
+              </button>
+            )}
           </div>
         ) : (
           <div className="flex h-full w-full flex-col items-center justify-center gap-2">
