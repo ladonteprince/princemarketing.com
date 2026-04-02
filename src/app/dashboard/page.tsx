@@ -76,7 +76,8 @@ export default function DashboardPage() {
     fetch("/api/user/assets?limit=6")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((data) => {
-        if (Array.isArray(data) && data.length > 0) setRecentAssets(data);
+        const assets = data?.assets ?? data;
+        if (Array.isArray(assets) && assets.length > 0) setRecentAssets(assets);
       })
       .catch(() => {});
   }, []);

@@ -1,13 +1,12 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   ImageIcon,
   Video,
   Music,
   FileText,
   Download,
-  Copy,
   Trash2,
   Search,
   Filter,
@@ -15,6 +14,7 @@ import {
   AlertCircle,
   ExternalLink,
   Film,
+  Upload,
 } from "lucide-react";
 
 type AssetType = "image" | "video" | "audio" | "copy";
@@ -66,12 +66,12 @@ function handleUseInEditor(asset: Asset) {
 
 function AssetCard({
   asset,
-  onCopyUrl,
   onDownload,
+  onDelete,
 }: {
   asset: Asset;
-  onCopyUrl: (url: string) => void;
   onDownload: (asset: Asset) => void;
+  onDelete: (asset: Asset) => void;
 }) {
   const typeIcon: Record<AssetType, React.ElementType> = {
     image: ImageIcon,
@@ -171,13 +171,6 @@ function AssetCard({
                 </button>
               )}
               <button
-                onClick={() => onCopyUrl(asset.url!)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg bg-graphite/90 text-cloud backdrop-blur-sm transition-colors hover:bg-royal cursor-pointer"
-                title="Copy URL"
-              >
-                <Copy size={14} strokeWidth={1.5} />
-              </button>
-              <button
                 onClick={() => onDownload(asset)}
                 className="flex h-8 w-8 items-center justify-center rounded-lg bg-graphite/90 text-cloud backdrop-blur-sm transition-colors hover:bg-royal cursor-pointer"
                 title="Download"
@@ -193,6 +186,13 @@ function AssetCard({
               >
                 <ExternalLink size={14} strokeWidth={1.5} />
               </a>
+              <button
+                onClick={() => onDelete(asset)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-graphite/90 text-cloud backdrop-blur-sm transition-colors hover:bg-red-500/80 cursor-pointer"
+                title="Delete"
+              >
+                <Trash2 size={14} strokeWidth={1.5} />
+              </button>
             </>
           )}
         </div>
@@ -237,7 +237,8 @@ export default function AssetsPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<AssetType | "all">("all");
   const [search, setSearch] = useState("");
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     async function fetchAssets() {
@@ -270,13 +271,36 @@ export default function AssetsPage() {
     return result;
   }, [assets, activeFilter, search]);
 
-  const handleCopyUrl = async (url: string) => {
+  const handleDelete = async (asset: Asset) => {
+    if (!window.confirm("Delete this asset?")) return;
     try {
-      await navigator.clipboard.writeText(url);
-      setCopiedId(url);
-      setTimeout(() => setCopiedId(null), 2000);
-    } catch {
-      // Clipboard API not available
+      const res = await fetch(`/api/user/assets/${asset.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete asset");
+      setAssets((prev) => prev.filter((a) => a.id !== asset.id));
+    } catch (err) {
+      console.error("Delete failed:", err);
+    }
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const blobUrl = URL.createObjectURL(file);
+      const isVideo = file.type.startsWith("video/");
+      const newAsset: Asset = {
+        id: crypto.randomUUID(),
+        type: isVideo ? "video" : "image",
+        status: "completed",
+        url: blobUrl,
+        prompt: file.name,
+        createdAt: new Date().toISOString(),
+      };
+      setAssets((prev) => [newAsset, ...prev]);
+    } finally {
+      setUploading(false);
+      if (uploadInputRef.current) uploadInputRef.current.value = "";
     }
   };
 
@@ -350,25 +374,46 @@ export default function AssetsPage() {
             })}
           </div>
 
-          {/* Search */}
-          <div className="relative">
-            <Search
-              size={14}
-              strokeWidth={1.5}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-ash"
-            />
+          {/* Search + Upload */}
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search
+                size={14}
+                strokeWidth={1.5}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-ash"
+              />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by prompt..."
+                className="
+                  w-full rounded-lg border border-smoke bg-slate/30 py-1.5 pl-8 pr-3
+                  text-xs text-cloud placeholder:text-ash/50
+                  outline-none transition-colors focus:border-royal/40 focus:bg-slate/50
+                  sm:w-64
+                "
+              />
+            </div>
             <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by prompt..."
-              className="
-                w-full rounded-lg border border-smoke bg-slate/30 py-1.5 pl-8 pr-3
-                text-xs text-cloud placeholder:text-ash/50
-                outline-none transition-colors focus:border-royal/40 focus:bg-slate/50
-                sm:w-64
-              "
+              ref={uploadInputRef}
+              type="file"
+              accept="image/*,video/*"
+              className="hidden"
+              onChange={handleUpload}
             />
+            <button
+              onClick={() => uploadInputRef.current?.click()}
+              disabled={uploading}
+              className="flex items-center gap-1.5 rounded-lg bg-royal px-3 py-1.5 text-xs font-medium text-cloud transition-colors hover:bg-royal/80 disabled:opacity-50 cursor-pointer"
+            >
+              {uploading ? (
+                <Loader2 size={14} strokeWidth={1.5} className="animate-spin" />
+              ) : (
+                <Upload size={14} strokeWidth={1.5} />
+              )}
+              <span>Upload</span>
+            </button>
           </div>
         </div>
       </div>
@@ -405,20 +450,14 @@ export default function AssetsPage() {
               <AssetCard
                 key={asset.id}
                 asset={asset}
-                onCopyUrl={handleCopyUrl}
                 onDownload={handleDownload}
+                onDelete={handleDelete}
               />
             ))}
           </div>
         )}
       </div>
 
-      {/* Copied toast */}
-      {copiedId && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-lg bg-graphite border border-smoke px-4 py-2 text-xs font-medium text-cloud shadow-lg">
-          URL copied to clipboard
-        </div>
-      )}
     </div>
   );
 }

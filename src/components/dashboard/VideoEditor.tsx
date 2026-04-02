@@ -39,6 +39,7 @@ type VideoEditorProps = {
   project: VideoProject;
   onUpdateProject: (project: VideoProject) => void;
   onClose?: () => void;
+  initialDrawerOpen?: boolean;
 };
 
 /* ─── Constants ─────────────────────────────────────────────────────── */
@@ -657,6 +658,7 @@ export function VideoEditor({
   project,
   onUpdateProject,
   onClose,
+  initialDrawerOpen,
 }: VideoEditorProps) {
   const [newPrompt, setNewPrompt] = useState("");
   const [showAddScene, setShowAddScene] = useState(false);
@@ -668,7 +670,7 @@ export function VideoEditor({
   const sourceImageInputRef = useRef<HTMLInputElement>(null);
   const refImageInputRef = useRef<HTMLInputElement>(null);
   const [pendingSourceSceneId, setPendingSourceSceneId] = useState<string | null>(null);
-  const [showAssetDrawer, setShowAssetDrawer] = useState(false);
+  const [showAssetDrawer, setShowAssetDrawer] = useState(initialDrawerOpen ?? false);
   const [deletedScene, setDeletedScene] = useState<{scene: VideoScene; index: number} | null>(null);
   const [includeAudio, setIncludeAudio] = useState(true);
 

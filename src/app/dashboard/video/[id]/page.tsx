@@ -24,6 +24,7 @@ export default function VideoEditorPage() {
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(project.title);
   const [toast, setToast] = useState<string | null>(null);
+  const [openDrawer, setOpenDrawer] = useState(false);
 
   // Import asset from Assets page via localStorage
   useEffect(() => {
@@ -152,6 +153,7 @@ export default function VideoEditorPage() {
           <VideoEditor
             project={project}
             onUpdateProject={handleUpdateProject}
+            initialDrawerOpen={openDrawer}
           />
         ) : (
           <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-smoke bg-graphite/50 py-16">
@@ -174,7 +176,7 @@ export default function VideoEditorPage() {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => router.push("/dashboard/assets")}
+                onClick={() => { addEmptyScene(); setOpenDrawer(true); }}
                 icon={<FolderOpen size={14} strokeWidth={1.5} />}
               >
                 Browse Assets

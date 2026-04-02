@@ -55,7 +55,10 @@ export async function GET(request: NextRequest) {
     const generations = inner?.generations ?? [];
     const total = inner?.pagination?.total ?? generations.length;
 
-    const assets: Asset[] = generations.map((g: any) => generationToAsset({
+    // Filter out failed generations so they never appear in the user's asset library
+    const filteredGenerations = generations.filter((g: any) => g.status !== "failed");
+
+    const assets: Asset[] = filteredGenerations.map((g: any) => generationToAsset({
       id: g.id,
       type: g.type ?? "image",
       status: g.status ?? "passed",
