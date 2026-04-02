@@ -554,7 +554,42 @@ export function VideoEditor({
     });
 
     if (!res.ok) throw new Error("Generation failed");
-    return res.json();
+    const data = await res.json();
+
+    // If we got a generationId (202 async), poll/stream for completion
+    const generationId = data.generationId;
+    if (generationId && !data.videoUrl) {
+      return new Promise((resolve) => {
+        const { streamGeneration } = require("@/lib/api");
+        const cancel = streamGeneration(generationId, {
+          onCompleted: (event: { data: { resultUrl?: string; score?: number } }) => {
+            const videoUrl = event.data.resultUrl;
+            resolve({
+              videoUrl: videoUrl ? `/api/proxy/image?url=${encodeURIComponent(videoUrl)}` : undefined,
+              duration: scene.duration,
+            });
+          },
+          onFailed: () => {
+            resolve({ duration: scene.duration });
+          },
+          onError: () => {
+            resolve({ duration: scene.duration });
+          },
+        });
+
+        // Safety timeout: 10 minutes
+        setTimeout(() => {
+          cancel();
+          resolve({ duration: scene.duration });
+        }, 10 * 60 * 1000);
+      });
+    }
+
+    return {
+      videoUrl: data.videoUrl || data.resultUrl,
+      thumbnailUrl: data.thumbnailUrl,
+      duration: data.duration ?? scene.duration,
+    };
   }
 
   async function handleRegenerate(scene: VideoScene) {

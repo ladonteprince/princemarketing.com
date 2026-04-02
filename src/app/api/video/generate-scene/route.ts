@@ -3,9 +3,16 @@ import { auth } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limiter";
 import { z } from "zod";
 
+const API_BASE = process.env.PRINCE_API_URL || "https://princemarketing.ai";
+const API_KEY = process.env.PRINCE_API_KEY || "";
+
 const requestSchema = z.object({
   prompt: z.string().min(1),
+  duration: z.number().optional().default(5),
+  mode: z.string().optional(),
   referenceImages: z.array(z.string()).optional(),
+  imageLabels: z.array(z.string()).optional(),
+  sourceImage: z.string().optional(),
 });
 
 export async function POST(request: Request) {
@@ -31,42 +38,46 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
-    const { prompt, referenceImages } = parsed.data;
+    // Call the real .ai backend for video generation
+    const res = await fetch(`${API_BASE}/api/v1/generate/video`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": API_KEY,
+      },
+      body: JSON.stringify({
+        prompt: parsed.data.prompt,
+        duration: String(parsed.data.duration),
+        aspectRatio: "16:9",
+        mode: parsed.data.mode ?? "t2v",
+        referenceImages: parsed.data.referenceImages,
+        imageLabels: parsed.data.imageLabels,
+        sourceImage: parsed.data.sourceImage,
+      }),
+    });
 
-    // TODO: Integrate with the .ai API (Seedance/Veo) for actual video generation
-    // For now, this is a stub that returns a placeholder
-    //
-    // In production, this would:
-    // 1. Call the PrinceMarketing.ai video generation API
-    // 2. Poll for completion
-    // 3. Return the final video URL + thumbnail
-    //
-    // Example integration:
-    // const res = await fetch(`${process.env.AI_ENGINE_URL}/api/video/generate`, {
-    //   method: "POST",
-    //   headers: {
-    //     "Content-Type": "application/json",
-    //     "Authorization": `Bearer ${process.env.AI_ENGINE_API_KEY}`,
-    //   },
-    //   body: JSON.stringify({
-    //     prompt,
-    //     referenceImages,
-    //     model: "seedance-2.0",
-    //     duration: 5,
-    //     resolution: "720p",
-    //   }),
-    // });
+    const result = await res.json();
+
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: result?.error?.message ?? "Video generation failed" },
+        { status: res.status },
+      );
+    }
+
+    const generationId = result?.data?.generationId ?? result?.meta?.generationId;
 
     return NextResponse.json({
-      videoUrl: null, // Will be a real URL once .ai API is connected
+      generationId,
+      videoUrl: null, // Will be populated when generation completes
       thumbnailUrl: null,
-      duration: 5,
-      prompt,
-      status: "queued",
-      message: "Video generation is queued. Connect the .ai API to enable real video generation.",
+      duration: parsed.data.duration,
+      prompt: parsed.data.prompt,
+      status: "processing",
+      streamUrl: generationId ? `/api/stream/${generationId}` : null,
     });
   } catch (error) {
-    console.error("Video generate error:", error);
+    console.error("Video generate-scene error:", error);
     return NextResponse.json(
       { error: "Failed to generate video" },
       { status: 500 },
