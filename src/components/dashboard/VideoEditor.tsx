@@ -343,23 +343,30 @@ function SceneCard({
         </p>
       )}
 
-      {/* Reference image tags for this scene */}
+      {/* Reference image tags — click name to insert into prompt */}
       {scene.referenceImageIds.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
           {scene.referenceImageIds.map((refId) => {
             const ref = projectRefs.find((r) => r.id === refId);
             const refIndex = projectRefs.findIndex((r) => r.id === refId);
             return ref ? (
-              <Badge
+              <button
                 key={refId}
-                variant="royal"
-                className="text-[9px] gap-1"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (ref.label) {
+                    // Insert ref name into prompt
+                    onUpdate({ prompt: (scene.prompt ? scene.prompt + " " : "") + ref.label });
+                  }
+                }}
+                className="inline-flex items-center gap-1 rounded-md bg-royal/15 px-1.5 py-0.5 text-[9px] font-medium text-royal hover:bg-royal/25 transition-colors cursor-pointer"
+                title={ref.label ? `Click to insert "${ref.label}" into prompt` : `@image${refIndex + 1}`}
               >
-                @image{refIndex + 1}
-                {ref.label ? ` (${ref.label})` : ""}
-              </Badge>
+                {ref.label || `@image${refIndex + 1}`}
+              </button>
             ) : null;
           })}
+          <span className="text-[8px] text-ash/40 self-center ml-1">tap to insert</span>
         </div>
       )}
 
@@ -727,8 +734,24 @@ export function VideoEditor({
     thumbnailUrl?: string;
     duration?: number;
   }> {
+    // Auto-replace reference names in prompt with @imageN tags
+    // e.g., "Jerry walks in" → "@image1 walks in" if ref labeled "Jerry" is tagged
+    let processedPrompt = scene.prompt;
+    const taggedRefs = scene.referenceImageIds
+      .map((id) => refs.find((r) => r.id === id))
+      .filter(Boolean) as ReferenceImage[];
+
+    taggedRefs.forEach((ref, i) => {
+      if (ref.label && ref.label.trim()) {
+        // Replace the label name with @imageN (case-insensitive, whole word)
+        const escaped = ref.label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`\\b${escaped}\\b`, 'gi');
+        processedPrompt = processedPrompt.replace(regex, `@image${i + 1}`);
+      }
+    });
+
     const body: Record<string, unknown> = {
-      prompt: scene.prompt,
+      prompt: processedPrompt,
       mode: scene.mode,
       duration: scene.duration,
     };
@@ -744,11 +767,8 @@ export function VideoEditor({
       body.sourceVideo = scene.videoUrl;
     }
 
-    if (scene.referenceImageIds.length > 0) {
-      body.referenceImages = scene.referenceImageIds
-        .map((id) => refs.find((r) => r.id === id))
-        .filter(Boolean)
-        .map((r) => ({ url: r!.url, label: r!.label }));
+    if (taggedRefs.length > 0) {
+      body.referenceImages = taggedRefs.map((r) => ({ url: r.url, label: r.label }));
     }
 
     const res = await fetch("/api/generate/video", {
