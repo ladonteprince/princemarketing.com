@@ -16,6 +16,8 @@ const schema = z.object({
   mode: z.enum(['t2v', 'i2v', 'extend', 'character', 'video-edit']).optional(),
   sourceImage: z.string().url().optional(),
   sourceVideo: z.string().url().optional(),
+  referenceImages: z.array(z.object({ url: z.string(), label: z.string().optional() })).optional(),
+  includeAudio: z.boolean().optional(),
   seed: z.number().optional(),
 });
 

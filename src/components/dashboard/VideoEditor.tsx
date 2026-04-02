@@ -739,6 +739,11 @@ export function VideoEditor({
       body.sourceImage = scene.sourceImageUrl;
     }
 
+    // Extend mode: pass the current video as sourceVideo
+    if (scene.mode === "extend" && scene.videoUrl) {
+      body.sourceVideo = scene.videoUrl;
+    }
+
     if (scene.referenceImageIds.length > 0) {
       body.referenceImages = scene.referenceImageIds
         .map((id) => refs.find((r) => r.id === id))
