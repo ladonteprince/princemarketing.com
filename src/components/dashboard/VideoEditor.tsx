@@ -25,6 +25,7 @@ import {
   Sparkles,
   ChevronRight,
   FolderOpen,
+  Download,
 } from "lucide-react";
 import type {
   VideoScene,
@@ -696,6 +697,7 @@ export function VideoEditor({
   const [showAddScene, setShowAddScene] = useState(false);
   const [insertIndex, setInsertIndex] = useState<number | null>(null);
   const [stitching, setStitching] = useState(false);
+  const [stitchedUrl, setStitchedUrl] = useState<string | null>(null);
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
   const [showRefSection, setShowRefSection] = useState(true);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -962,7 +964,7 @@ export function VideoEditor({
       if (res.ok) {
         const data = await res.json();
         const url = data.videoUrl || data.directUrl;
-        if (url) window.open(url, "_blank");
+        if (url) setStitchedUrl(url);
       }
     } catch {
       // Stitch failed
@@ -1490,6 +1492,31 @@ export function VideoEditor({
           >
             Undo
           </button>
+        </div>
+      )}
+
+      {/* ── Stitched Preview Modal ─────────────────────────────── */}
+      {stitchedUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-void/80 backdrop-blur-sm">
+          <div className="w-full max-w-3xl mx-4 rounded-2xl border border-smoke bg-graphite overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-smoke/60">
+              <h3 className="text-sm font-semibold text-cloud">Preview — Stitched Export</h3>
+              <div className="flex items-center gap-2">
+                <a href={stitchedUrl} download className="flex items-center gap-1.5 rounded-lg bg-royal px-3 py-1.5 text-xs font-medium text-white hover:bg-royal/80 transition-colors">
+                  <Download size={12} /> Download
+                </a>
+                <button onClick={() => window.open(stitchedUrl, "_blank")} className="flex items-center gap-1.5 rounded-lg bg-slate px-3 py-1.5 text-xs font-medium text-cloud hover:bg-smoke transition-colors cursor-pointer">
+                  Open in Tab
+                </button>
+                <button onClick={() => setStitchedUrl(null)} className="flex h-7 w-7 items-center justify-center rounded-lg text-ash hover:text-cloud hover:bg-slate transition-colors cursor-pointer">
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+            <div className="p-4">
+              <video src={stitchedUrl} controls autoPlay className="w-full rounded-xl" />
+            </div>
+          </div>
         </div>
       )}
     </div>
