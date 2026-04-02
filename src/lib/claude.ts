@@ -83,6 +83,14 @@ Available actions:
 {"action": "AUDIENCE_INSIGHT"}
 \`\`\`
 
+13. DISTRIBUTE: Distribute content across multiple platforms at once with per-platform caption optimization
+\`\`\`action
+{"action": "DISTRIBUTE", "content": "caption text", "mediaUrl": "https://...", "platforms": ["instagram", "facebook", "twitter"], "platformCaptions": {"twitter": "Short tweet version"}, "scheduledAt": "2026-04-02T10:00:00Z"}
+\`\`\`
+- platformCaptions is optional: per-platform caption overrides. If omitted, captions are auto-optimized per platform limits.
+- scheduledAt is optional: ISO 8601 date for scheduled publish. If omitted, publishes immediately.
+- mediaUrl is optional: URL of image or video to attach.
+
 Rules:
 - When the user asks you to DO something, TAKE THE ACTION. Include the action JSON in your response and the frontend will execute it.
 - CRITICAL: When the user asks you to create a video, commercial, or any moving content, you MUST output a CREATE_VIDEO action block with a scenes array. Do not just describe the video — actually create it using the action system. Every video request must result in a CREATE_VIDEO action.

@@ -44,6 +44,12 @@ export const PLATFORMS = {
   tiktok: {
     name: "TikTok",
     // TikTok Login Kit uses OAuth2 with PKCE
+    // IMPORTANT: The TikTok developer portal requires the redirect_uri to exactly match
+    // what is registered in Login Kit. A new redirect URI must be added via the portal
+    // by creating a revision in the TikTok Developer Console:
+    //   https://princemarketing.com/api/social/callback/tiktok
+    // Until that revision is approved, TikTok OAuth will only work with URIs already
+    // registered (e.g. ladonteprince.com). This cannot be changed programmatically.
     authUrl: "https://www.tiktok.com/v2/auth/authorize/",
     tokenUrl: "https://open.tiktokapis.com/v2/oauth/token/",
     scopes: ["user.info.basic", "video.publish", "video.list"],

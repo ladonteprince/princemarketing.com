@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Send } from "lucide-react";
 import { Canvas } from "@/components/dashboard/Canvas";
 import { ChatPanel } from "@/components/dashboard/ChatPanel";
@@ -10,11 +10,61 @@ import { OnboardingChecklist } from "@/components/dashboard/OnboardingChecklist"
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import type { ContentNode, CanvasAction, VideoProject, VideoScene } from "@/types/canvas";
 
+const CANVAS_STORAGE_KEY = "pm-canvas-nodes";
+const VIDEO_PROJECTS_STORAGE_KEY = "pm-video-projects";
+const ACTIVE_VIDEO_STORAGE_KEY = "pm-active-video-project";
+
+// Helpers to serialize/deserialize Map<string, VideoProject> as JSON
+function serializeVideoProjects(map: Map<string, VideoProject>): string {
+  return JSON.stringify(Array.from(map.entries()));
+}
+
+function deserializeVideoProjects(json: string): Map<string, VideoProject> {
+  const entries: [string, VideoProject][] = JSON.parse(json);
+  return new Map(entries);
+}
+
 export default function DashboardPage() {
-  const [nodes, setNodes] = useState<ContentNode[]>([]);
+  const [nodes, setNodes] = useState<ContentNode[]>(() => {
+    if (typeof window === "undefined") return [];
+    const saved = localStorage.getItem(CANVAS_STORAGE_KEY);
+    if (saved) {
+      try { return JSON.parse(saved); } catch { /* ignore */ }
+    }
+    return [];
+  });
   const [chatCollapsed, setChatCollapsed] = useState(false);
-  const [videoProjects, setVideoProjects] = useState<Map<string, VideoProject>>(new Map());
-  const [activeVideoProject, setActiveVideoProject] = useState<string | null>(null);
+  const [videoProjects, setVideoProjects] = useState<Map<string, VideoProject>>(() => {
+    if (typeof window === "undefined") return new Map();
+    const saved = localStorage.getItem(VIDEO_PROJECTS_STORAGE_KEY);
+    if (saved) {
+      try { return deserializeVideoProjects(saved); } catch { /* ignore */ }
+    }
+    return new Map();
+  });
+  const [activeVideoProject, setActiveVideoProject] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem(ACTIVE_VIDEO_STORAGE_KEY) || null;
+  });
+
+  // Persist canvas nodes to localStorage
+  useEffect(() => {
+    localStorage.setItem(CANVAS_STORAGE_KEY, JSON.stringify(nodes));
+  }, [nodes]);
+
+  // Persist video projects to localStorage
+  useEffect(() => {
+    localStorage.setItem(VIDEO_PROJECTS_STORAGE_KEY, serializeVideoProjects(videoProjects));
+  }, [videoProjects]);
+
+  // Persist active video project to localStorage
+  useEffect(() => {
+    if (activeVideoProject) {
+      localStorage.setItem(ACTIVE_VIDEO_STORAGE_KEY, activeVideoProject);
+    } else {
+      localStorage.removeItem(ACTIVE_VIDEO_STORAGE_KEY);
+    }
+  }, [activeVideoProject]);
 
   const handleCanvasAction = useCallback(
     (action: CanvasAction) => {

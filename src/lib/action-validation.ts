@@ -74,6 +74,32 @@ const GenerateVariantsAction = z.object({
   count: z.number().min(1).max(5).optional(),
 });
 
+const AnalyzeCompetitorsAction = z.object({
+  action: z.literal("ANALYZE_COMPETITORS"),
+  industry: z.string().max(200).optional(),
+  businessName: z.string().max(200).optional(),
+});
+
+const BuildStrategyAction = z.object({
+  action: z.literal("BUILD_STRATEGY"),
+  industry: z.string().max(200).optional(),
+  businessName: z.string().max(200).optional(),
+  goals: z.array(z.string().max(500)).max(10).optional(),
+});
+
+const AudienceInsightAction = z.object({
+  action: z.literal("AUDIENCE_INSIGHT"),
+});
+
+const DistributeAction = z.object({
+  action: z.literal("DISTRIBUTE"),
+  content: z.string().max(10000),
+  mediaUrl: z.string().url().optional(),
+  platforms: z.array(z.string()).min(1).max(7),
+  platformCaptions: z.record(z.string(), z.string().max(10000)).optional(),
+  scheduledAt: z.string().optional(),
+});
+
 // Union of all valid actions — anything else is rejected
 export const ActionBlockSchema = z.discriminatedUnion("action", [
   CreateImageAction,
@@ -85,6 +111,10 @@ export const ActionBlockSchema = z.discriminatedUnion("action", [
   GetRecommendationsAction,
   WeeklySummaryAction,
   GenerateVariantsAction,
+  AnalyzeCompetitorsAction,
+  BuildStrategyAction,
+  AudienceInsightAction,
+  DistributeAction,
 ]);
 
 export type ValidAction = z.infer<typeof ActionBlockSchema>;

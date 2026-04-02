@@ -18,6 +18,7 @@ import {
   Calendar,
   Send as SendIcon,
   BarChart3,
+  Trash2,
 } from "lucide-react";
 import type { ContentNode, CanvasAction } from "@/types/canvas";
 
@@ -419,13 +420,34 @@ function parseContentActions(
   return { actions, nodeRefs };
 }
 
+const CHAT_STORAGE_KEY = "pm-chat-messages";
+
 export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPanelProps) {
   const { data: session } = useSession();
-  const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (typeof window === "undefined") return [INITIAL_MESSAGE];
+    const saved = localStorage.getItem(CHAT_STORAGE_KEY);
+    if (saved) {
+      try { return JSON.parse(saved); } catch { /* ignore corrupt data */ }
+    }
+    return [INITIAL_MESSAGE];
+  });
   const [isThinking, setIsThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessionId] = useState(() => crypto.randomUUID());
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Persist chat messages to localStorage (keep last 50 to prevent bloat)
+  useEffect(() => {
+    if (messages.length > 1) {
+      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages.slice(-50)));
+    }
+  }, [messages]);
+
+  const handleClearChat = useCallback(() => {
+    localStorage.removeItem(CHAT_STORAGE_KEY);
+    setMessages([INITIAL_MESSAGE]);
+  }, []);
 
   const userName = session?.user?.name ?? "You";
 
@@ -665,17 +687,31 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
             <span className="royal-dot royal-dot-animate h-1.5 w-1.5" />
           </div>
         </div>
-        <button
-          onClick={onToggle}
-          className="
-            flex h-8 w-8 items-center justify-center rounded-lg
-            text-ash hover:text-cloud hover:bg-slate
-            transition-colors duration-200 cursor-pointer
-          "
-          aria-label="Close chat panel"
-        >
-          <PanelRightClose size={16} strokeWidth={1.5} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleClearChat}
+            className="
+              flex h-8 w-8 items-center justify-center rounded-lg
+              text-ash hover:text-coral hover:bg-coral/10
+              transition-colors duration-200 cursor-pointer
+            "
+            aria-label="Clear chat history"
+            title="Clear chat"
+          >
+            <Trash2 size={14} strokeWidth={1.5} />
+          </button>
+          <button
+            onClick={onToggle}
+            className="
+              flex h-8 w-8 items-center justify-center rounded-lg
+              text-ash hover:text-cloud hover:bg-slate
+              transition-colors duration-200 cursor-pointer
+            "
+            aria-label="Close chat panel"
+          >
+            <PanelRightClose size={16} strokeWidth={1.5} />
+          </button>
+        </div>
       </div>
 
       {/* Node references bar */}
