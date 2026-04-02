@@ -4,24 +4,30 @@ import { checkRateLimit } from "@/lib/rate-limiter";
 import { z } from "zod";
 
 // WHY: Proxy route checks NextAuth session then forwards to princemarketing.ai.
-// API key never leaves the server. Returns generationId + streamUrl for SSE.
+// Builds a music prompt from scene descriptions and sends to Suno via .ai.
 
 const API_BASE = process.env.PRINCE_API_URL || "https://princemarketing.ai";
 const API_KEY = process.env.PRINCE_API_KEY || "";
 
 const schema = z.object({
-  prompt: z.string().min(1),
-  duration: z.number().optional(),
-  mode: z.enum(['t2v', 'i2v', 'extend', 'character', 'video-edit']).optional(),
-  sourceImage: z.string().url().optional(),
-  sourceVideo: z.string().url().optional(),
-  referenceImages: z.array(z.object({ url: z.string(), label: z.string().optional() })).optional(),
-  includeAudio: z.boolean().optional(),
-  seed: z.number().optional(),
-  negativePrompt: z.string().max(500).optional(),
-  aspectRatio: z.enum(['16:9', '9:16', '1:1']).optional(),
-  qualityTier: z.enum(['starter', 'pro', 'agency']).optional(),
+  prompt: z.string().min(1).optional(),
+  duration: z.number().min(5).max(120).optional(),
+  style: z.string().optional(),
+  // Accept scene prompts to auto-build a music prompt
+  projectId: z.string().optional(),
+  scenes: z.array(z.string()).optional(),
 });
+
+/** Build a music generation prompt from scene descriptions */
+function buildMusicPrompt(scenes: string[], style?: string): string {
+  const sceneContext = scenes
+    .map((s, i) => `Scene ${i + 1}: ${s}`)
+    .join(". ");
+
+  const base = `Create background music for a video with the following scenes: ${sceneContext}`;
+  const styleHint = style ? ` Style: ${style}.` : " Style: cinematic, modern, emotionally resonant.";
+  return `${base}.${styleHint} The music should flow naturally across all scenes with smooth transitions.`;
+}
 
 export async function POST(request: Request) {
   try {
@@ -31,7 +37,7 @@ export async function POST(request: Request) {
     }
 
     const email = session.user.email ?? session.user.id ?? "unknown";
-    const { allowed, remaining } = checkRateLimit(`video:${email}`, 20);
+    const { allowed, remaining } = checkRateLimit(`music:${email}`, 10);
     if (!allowed) {
       return NextResponse.json(
         { error: "Rate limit exceeded. Try again in a minute." },
@@ -49,26 +55,36 @@ export async function POST(request: Request) {
       );
     }
 
-    // Call .ai backend directly to handle 202 response
-    const res = await fetch(`${API_BASE}/api/v1/generate/video`, {
+    // Build or use the provided prompt
+    const prompt =
+      parsed.data.prompt ??
+      buildMusicPrompt(parsed.data.scenes ?? [], parsed.data.style);
+
+    // Forward to .ai audio generation endpoint
+    const res = await fetch(`${API_BASE}/api/v1/generate/audio`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-api-key": API_KEY,
       },
-      body: JSON.stringify(parsed.data),
+      body: JSON.stringify({
+        prompt,
+        duration: parsed.data.duration ?? 30,
+        style: parsed.data.style ?? "cinematic",
+        mode: "generate",
+      }),
     });
 
     const result = await res.json();
 
     if (!res.ok) {
       return NextResponse.json(
-        { error: result?.error?.message ?? "Video generation failed" },
+        { error: result?.error?.message ?? "Music generation failed" },
         { status: res.status },
       );
     }
 
-    // Extract generationId from 202 response and return with local stream URL
+    // .ai returns 202 with generationId + streamUrl
     const generationId = result?.data?.generationId ?? result?.meta?.generationId;
 
     return NextResponse.json({
@@ -80,7 +96,7 @@ export async function POST(request: Request) {
     }, { status: res.status });
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Video generation failed";
+      error instanceof Error ? error.message : "Music generation failed";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

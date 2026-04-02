@@ -44,6 +44,7 @@ export interface VideoScene {
   mode: VideoSceneMode;
   referenceImageIds: string[]; // IDs referencing project-level reference images
   versions: VideoSceneVersion[];
+  score?: number;
 }
 
 export interface VideoProject {

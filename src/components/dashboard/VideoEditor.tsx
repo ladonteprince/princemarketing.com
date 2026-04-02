@@ -371,6 +371,14 @@ function SceneCard({
         </div>
       )}
 
+      {/* Critic score */}
+      {scene.score && (
+        <div className="mt-2 flex items-center gap-1.5">
+          <div className={`h-1.5 w-1.5 rounded-full ${scene.score >= 8 ? 'bg-emerald-400' : scene.score >= 6 ? 'bg-amber-400' : 'bg-red-400'}`} />
+          <span className="text-[10px] text-ash">{scene.score.toFixed(1)}/10</span>
+        </div>
+      )}
+
       {/* Action buttons */}
       <div className="mt-3 flex items-center gap-1.5">
         <button
