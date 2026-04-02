@@ -214,10 +214,22 @@ function SceneCard({
               <video
                 ref={(el) => {
                   if (!el) return;
+                  // Seek to trimStart so preview shows the trim point
+                  if (el.readyState >= 1 && Math.abs(el.currentTime - scene.trimStart) > 0.2 && el.paused) {
+                    el.currentTime = scene.trimStart;
+                  }
+                  el.onloadedmetadata = () => { el.currentTime = scene.trimStart; };
                   const overlay = el.nextElementSibling as HTMLElement;
                   const show = () => { if (overlay) overlay.style.display = ""; el.controls = false; };
                   el.onpause = show;
-                  el.onended = () => { el.currentTime = 0; show(); };
+                  el.onended = () => { el.currentTime = scene.trimStart; show(); };
+                  // Stop playback at trimEnd
+                  el.ontimeupdate = () => {
+                    if (el.currentTime >= scene.trimEnd) {
+                      el.pause();
+                      el.currentTime = scene.trimStart;
+                    }
+                  };
                 }}
                 src={scene.videoUrl}
                 className="h-full w-full object-cover"
@@ -445,30 +457,43 @@ function SceneCard({
               Out: <span className="font-mono text-cloud">{scene.trimEnd.toFixed(1)}s</span>
             </span>
           </div>
+          <p className="text-[10px] text-ash/50 mb-2">
+            Duration: {(scene.trimEnd - scene.trimStart).toFixed(1)}s of {scene.duration}s
+          </p>
           <div className="flex flex-col gap-2">
+            <label className="text-[9px] text-ash/60 uppercase tracking-wider">Start</label>
             <input
               type="range"
               min={0}
               max={scene.duration}
               step={0.1}
               value={scene.trimStart}
-              onChange={(e) =>
-                onTrimChange(parseFloat(e.target.value), scene.trimEnd)
-              }
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                onTrimChange(val, scene.trimEnd);
+                // Seek video preview to the new trim start
+                const video = (e.target as HTMLElement).closest('.group')?.querySelector('video') as HTMLVideoElement;
+                if (video) video.currentTime = val;
+              }}
               className="h-1 w-full accent-royal"
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
               onPointerDown={(e) => e.stopPropagation()}
             />
+            <label className="text-[9px] text-ash/60 uppercase tracking-wider">End</label>
             <input
               type="range"
               min={0}
               max={scene.duration}
               step={0.1}
               value={scene.trimEnd}
-              onChange={(e) =>
-                onTrimChange(scene.trimStart, parseFloat(e.target.value))
-              }
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                onTrimChange(scene.trimStart, val);
+                // Seek video preview to near the trim end
+                const video = (e.target as HTMLElement).closest('.group')?.querySelector('video') as HTMLVideoElement;
+                if (video) video.currentTime = Math.max(val - 0.5, scene.trimStart);
+              }}
               className="h-1 w-full accent-royal"
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
@@ -1398,7 +1423,14 @@ export function VideoEditor({
               ? { videoUrl: asset.url }
               : { sourceImageUrl: asset.url }),
           };
-          updateProject({ scenes: [...project.scenes, newScene] });
+          // Replace empty Scene 1 instead of appending after it
+          const firstScene = project.scenes[0];
+          const isFirstEmpty = firstScene && !firstScene.prompt && !firstScene.videoUrl && !firstScene.sourceImageUrl;
+          if (isFirstEmpty && project.scenes.length === 1) {
+            updateProject({ scenes: [newScene] });
+          } else {
+            updateProject({ scenes: [...project.scenes, newScene] });
+          }
         }}
       />
 
