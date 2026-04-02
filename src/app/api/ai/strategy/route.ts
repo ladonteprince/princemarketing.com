@@ -76,14 +76,14 @@ export async function POST(request: Request) {
       }
 
       case "audience": {
-        const audience = await analyzeAudience(socialContext);
+        const audience = await analyzeAudience(socialContext, industry, platforms);
         return NextResponse.json({ audience });
       }
 
       case "strategy": {
         // WHY: "strategy" mode without competitor/audience data still works —
         // buildStrategy handles empty arrays gracefully with sensible defaults.
-        const audience = await analyzeAudience(socialContext);
+        const audience = await analyzeAudience(socialContext, industry, platforms);
         const strategy = await buildStrategy({
           name: businessName,
           industry,

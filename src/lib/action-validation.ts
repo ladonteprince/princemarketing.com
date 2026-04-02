@@ -59,6 +59,21 @@ const GetAnalyticsAction = z.object({
   period: z.string().optional(),
 });
 
+const GetRecommendationsAction = z.object({
+  action: z.literal("GET_RECOMMENDATIONS"),
+});
+
+const WeeklySummaryAction = z.object({
+  action: z.literal("WEEKLY_SUMMARY"),
+});
+
+const GenerateVariantsAction = z.object({
+  action: z.literal("GENERATE_VARIANTS"),
+  prompt: z.string().max(4000).optional(),
+  platform: z.string().optional(),
+  count: z.number().min(1).max(5).optional(),
+});
+
 // Union of all valid actions — anything else is rejected
 export const ActionBlockSchema = z.discriminatedUnion("action", [
   CreateImageAction,
@@ -67,6 +82,9 @@ export const ActionBlockSchema = z.discriminatedUnion("action", [
   SchedulePostAction,
   PublishNowAction,
   GetAnalyticsAction,
+  GetRecommendationsAction,
+  WeeklySummaryAction,
+  GenerateVariantsAction,
 ]);
 
 export type ValidAction = z.infer<typeof ActionBlockSchema>;

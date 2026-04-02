@@ -117,10 +117,54 @@ export async function POST(request: Request) {
     // WHY: Inject the user's social media context so the AI can give personalized advice.
     // e.g. "Based on your recent Instagram posts about sneakers..." instead of generic tips.
     let socialContext = "";
+    let analyticsContext = "";
     try {
       socialContext = await buildUserContext(session.user.id ?? "");
     } catch (err) {
       console.error("[CreateContent] Failed to build social context:", err);
+    }
+
+    // WHY: Pre-fetch lightweight analytics summary so the AI can proactively say things
+    // like "Based on your analytics, video content performs 3x better on Tuesdays."
+    // This runs in parallel with the social context build and only adds a sentence or two.
+    try {
+      const recentEntries = await db.calendarEntry.findMany({
+        where: { userId: session.user.id ?? "", status: "PUBLISHED" },
+        include: { analytics: true },
+        orderBy: { publishedAt: "desc" },
+        take: 20,
+      });
+
+      if (recentEntries.length > 0) {
+        const totalEng = recentEntries.reduce(
+          (sum, e) => sum + e.analytics.reduce((s, a) => s + a.engagement, 0),
+          0,
+        );
+        const totalImp = recentEntries.reduce(
+          (sum, e) => sum + e.analytics.reduce((s, a) => s + a.impressions, 0),
+          0,
+        );
+        const avgEngRate = totalImp > 0 ? ((totalEng / totalImp) * 100).toFixed(1) : "0";
+        const topEntry = recentEntries
+          .map((e) => ({
+            title: e.title,
+            platform: e.platform,
+            engagement: e.analytics.reduce((s, a) => s + a.engagement, 0),
+          }))
+          .sort((a, b) => b.engagement - a.engagement)[0];
+
+        const parts = [
+          `User has ${recentEntries.length} recent published posts with ${avgEngRate}% avg engagement rate.`,
+        ];
+        if (topEntry && topEntry.engagement > 0) {
+          parts.push(
+            `Top performer: "${topEntry.title}" on ${topEntry.platform} (${topEntry.engagement} engagements).`,
+          );
+        }
+        analyticsContext = parts.join(" ");
+      }
+    } catch (err) {
+      console.error("[CreateContent] Failed to build analytics context:", err);
     }
 
     // WHY: Sanitize external social content before injecting into the system prompt.
@@ -132,6 +176,7 @@ export async function POST(request: Request) {
     const contextSources: string[] = ["base_prompt"];
     if (existingNodes?.length) contextSources.push("existing_nodes");
     if (safeSocialContext) contextSources.push("social_context");
+    if (analyticsContext) contextSources.push("analytics_context");
 
     const systemPrompt = WORKSPACE_SYSTEM_PROMPT.replace(
       "{existingNodes}",
@@ -140,6 +185,9 @@ export async function POST(request: Request) {
         : "0",
     ) + (safeSocialContext
       ? `\n\nUser's social media context (use this to personalize your advice and content):\n${safeSocialContext}`
+      : "")
+    + (analyticsContext
+      ? `\n\nUser's recent analytics (reference this proactively when relevant):\n${analyticsContext}\nWhen the user asks to create content, suggest using GENERATE_VARIANTS to get A/B options. When they ask about performance, use GET_ANALYTICS for deep insights.`
       : "");
 
     // Audit log: track what went into the system prompt (metadata only, no PII)
@@ -189,6 +237,151 @@ export async function POST(request: Request) {
     // Malformed or injected action types are dropped here — never executed.
     const validatedActions = validateActions(actions);
 
+    // WHY: Process agent-specific actions server-side before returning to frontend.
+    // These actions require DB access and Claude API calls that can't run client-side.
+    const agentResults: Record<string, unknown> = {};
+    const userId = session.user.id ?? "";
+
+    for (const action of validatedActions) {
+      try {
+        switch (action.action) {
+          case "GET_ANALYTICS": {
+            // Fetch published posts with analytics data
+            const entries = await db.calendarEntry.findMany({
+              where: { userId, status: "PUBLISHED" },
+              include: { analytics: true },
+              orderBy: { publishedAt: "desc" },
+              take: 100,
+            });
+
+            const posts: AnalyzablePost[] = entries.flatMap((entry) =>
+              entry.analytics.length > 0
+                ? [{
+                    content: entry.title,
+                    platform: entry.platform,
+                    engagement: entry.analytics.reduce((s, a) => s + a.engagement, 0),
+                    impressions: entry.analytics.reduce((s, a) => s + a.impressions, 0),
+                    postedAt: entry.publishedAt?.toISOString() ?? entry.scheduledAt.toISOString(),
+                  }]
+                : [],
+            );
+
+            const insights = await analyzePerformance(posts);
+            agentResults.analytics = { insights, postCount: posts.length };
+            break;
+          }
+
+          case "GET_RECOMMENDATIONS": {
+            // Build recommendations from existing insights (or generate fresh ones)
+            const recentEntries = await db.calendarEntry.findMany({
+              where: { userId, status: "PUBLISHED" },
+              include: { analytics: true },
+              orderBy: { publishedAt: "desc" },
+              take: 50,
+            });
+
+            const recentPosts: AnalyzablePost[] = recentEntries.flatMap((entry) =>
+              entry.analytics.length > 0
+                ? [{
+                    content: entry.title,
+                    platform: entry.platform,
+                    engagement: entry.analytics.reduce((s, a) => s + a.engagement, 0),
+                    impressions: entry.analytics.reduce((s, a) => s + a.impressions, 0),
+                    postedAt: entry.publishedAt?.toISOString() ?? entry.scheduledAt.toISOString(),
+                  }]
+                : [],
+            );
+
+            const insights = await analyzePerformance(recentPosts);
+            const recommendations = await generateRecommendations(insights);
+            agentResults.recommendations = recommendations;
+            break;
+          }
+
+          case "WEEKLY_SUMMARY": {
+            // Fetch this week's data
+            const oneWeekAgo = new Date();
+            oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+            const [weekEntries, connectedPlatforms] = await Promise.all([
+              db.calendarEntry.findMany({
+                where: {
+                  userId,
+                  status: "PUBLISHED",
+                  publishedAt: { gte: oneWeekAgo },
+                },
+                include: { analytics: true },
+              }),
+              db.platform.findMany({
+                where: { userId, connected: true, accessToken: { not: null } },
+                select: { type: true, accessToken: true },
+              }),
+            ]);
+
+            const platformAnalytics = connectedPlatforms.length > 0
+              ? await fetchAllPlatformAnalytics(
+                  connectedPlatforms
+                    .filter((p): p is typeof p & { accessToken: string } => p.accessToken !== null)
+                    .map((p) => ({ type: p.type.toLowerCase(), accessToken: p.accessToken })),
+                )
+              : [];
+
+            const publishedPosts = weekEntries.map((entry) => ({
+              title: entry.title,
+              platform: entry.platform,
+              engagement: entry.analytics.reduce((s, a) => s + a.engagement, 0),
+              impressions: entry.analytics.reduce((s, a) => s + a.impressions, 0),
+              postedAt: entry.publishedAt?.toISOString() ?? entry.scheduledAt.toISOString(),
+            }));
+
+            const summary = await generateWeeklySummary(platformAnalytics, publishedPosts);
+            agentResults.weeklySummary = summary;
+            break;
+          }
+
+          case "GENERATE_VARIANTS": {
+            const prompt = String(action.prompt ?? message);
+            const platform = String(action.platform ?? "instagram");
+            const count = Number(action.count) || 3;
+
+            // Learn brand voice from user's existing content
+            const platforms = await db.platform.findMany({
+              where: { userId, connected: true, accessToken: { not: null } },
+              select: { type: true, accessToken: true, accountName: true },
+            });
+
+            // Use the social indexer data to get recent posts for voice learning
+            let brandVoice = await learnBrandVoice([]);
+            if (platforms.length > 0) {
+              // Fetch recent published entries as proxy for brand voice
+              const recentContent = await db.calendarEntry.findMany({
+                where: { userId, status: "PUBLISHED" },
+                orderBy: { publishedAt: "desc" },
+                take: 20,
+                select: { title: true, content: true, platform: true },
+              });
+
+              if (recentContent.length > 0) {
+                brandVoice = await learnBrandVoice(
+                  recentContent.map((p) => ({
+                    content: p.content ?? p.title,
+                    platform: p.platform,
+                  })),
+                );
+              }
+            }
+
+            const variants = await generateVariants(prompt, brandVoice, platform, count);
+            agentResults.variants = { variants, brandVoice };
+            break;
+          }
+        }
+      } catch (err) {
+        console.error(`[CreateContent] Agent action ${action.action} failed:`, err);
+        agentResults[String(action.action)] = { error: "Agent processing failed" };
+      }
+    }
+
     // Parse legacy ```json blocks for canvas nodes
     let nodes: unknown[] = [];
     const jsonMatch = fullText.match(/```json\s*([\s\S]*?)```/);
@@ -232,6 +425,10 @@ export async function POST(request: Request) {
       message: safeMessage,
       nodes,
       actions: validatedActions,
+      // WHY: Agent results are returned alongside the message so the frontend can
+      // render insights, recommendations, variants, and summaries inline in the chat.
+      // Only populated when the AI triggered agent-specific actions.
+      ...(Object.keys(agentResults).length > 0 ? { agentResults } : {}),
     });
   } catch (error) {
     console.error("Create content API error:", error);
