@@ -347,21 +347,8 @@ export default function DashboardPage() {
       {/* KPI summary bar */}
       <KPIBar />
 
-      {/* Video editor overlay */}
-      {activeProject && (
-        <div ref={videoEditorRef} className="border-b border-smoke">
-          <ErrorBoundary>
-            <VideoEditor
-              project={activeProject}
-              onUpdateProject={handleUpdateVideoProject}
-              onClose={() => setActiveVideoProject(null)}
-            />
-          </ErrorBoundary>
-        </div>
-      )}
-
-      {/* Onboarding checklist for new users */}
-      <OnboardingChecklist nodes={nodes} />
+      {/* Onboarding checklist for new users (hide when editor is open) */}
+      {!activeProject && <OnboardingChecklist nodes={nodes} />}
 
       {/* Recent assets quick-links */}
       {recentAssets.length > 0 && (
@@ -414,8 +401,20 @@ export default function DashboardPage() {
 
       {/* Main split panel: Canvas + Chat */}
       <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
-        {/* Canvas (fills remaining width) — on mobile show a simplified node list */}
-        <div className="flex-1 min-h-[40vh] lg:min-h-0">
+        {/* Main content area — Video Editor when active, otherwise Canvas */}
+        <div className="flex-1 min-h-[40vh] lg:min-h-0 overflow-y-auto">
+          {activeProject ? (
+            <div ref={videoEditorRef}>
+              <ErrorBoundary>
+                <VideoEditor
+                  project={activeProject}
+                  onUpdateProject={handleUpdateVideoProject}
+                  onClose={() => setActiveVideoProject(null)}
+                />
+              </ErrorBoundary>
+            </div>
+          ) : (
+          <>
           {/* Spatial canvas for desktop */}
           <div className="hidden h-full lg:block">
             <ErrorBoundary>
@@ -469,6 +468,8 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+          </>
+          )}
         </div>
 
         {/* Chat panel — full width on mobile, side panel on desktop */}
