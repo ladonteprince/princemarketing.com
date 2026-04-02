@@ -83,9 +83,9 @@ const ALL_PLATFORMS = [
 ];
 
 const TIER_LABELS: Record<string, { name: string; price: string; features: string }> = {
-  STARTER: { name: "Starter Plan", price: "$29/month", features: "2 platforms, 20 posts/month" },
-  GROWTH: { name: "Growth Plan", price: "$79/month", features: "5 platforms, 60 posts/month" },
-  SCALE: { name: "Scale Plan", price: "$199/month", features: "Unlimited platforms, unlimited posts" },
+  STARTER: { name: "Starter Plan", price: "$29/month", features: "50 images, 5 videos, 200 copy, 5 audio, 10 AI agent calls" },
+  GROWTH: { name: "Growth Plan", price: "$79/month", features: "200 images, 25 videos, 1K copy, 20 audio, 50 AI agent calls" },
+  SCALE: { name: "Scale Plan", price: "$199/month", features: "1K images, 100 videos, 5K copy, 100 audio, unlimited AI" },
 };
 
 export default function SettingsPageWrapper() {
