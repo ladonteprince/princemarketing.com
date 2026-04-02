@@ -48,13 +48,25 @@ export async function GET(request: NextRequest) {
     const limit = limitParam ? Math.min(parseInt(limitParam, 10), 200) : 50;
     const offset = offsetParam ? parseInt(offsetParam, 10) : 0;
 
-    const result = await princeAPI.getGenerations({ limit, offset });
+    const result = await princeAPI.getGenerations({ limit, offset }) as any;
 
-    const assets: Asset[] = (result.generations ?? []).map(generationToAsset);
+    // Unwrap .ai API envelope: { type: "success", data: { generations: [...] } }
+    const inner = result?.data ?? result;
+    const generations = inner?.generations ?? [];
+    const total = inner?.pagination?.total ?? generations.length;
+
+    const assets: Asset[] = generations.map((g: any) => generationToAsset({
+      id: g.id,
+      type: g.type ?? "image",
+      status: g.status ?? "passed",
+      prompt: g.prompt ?? "",
+      resultUrl: g.resultUrl ?? g.result_url,
+      createdAt: g.createdAt ?? g.created_at ?? new Date().toISOString(),
+    }));
 
     return NextResponse.json({
       assets,
-      total: result.total ?? assets.length,
+      total,
     });
   } catch (error) {
     console.error("[UserAssets] Failed to fetch generations:", error);
