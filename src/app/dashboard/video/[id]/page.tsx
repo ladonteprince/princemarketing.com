@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Header } from "@/components/layout/Header";
 import { VideoEditor } from "@/components/dashboard/VideoEditor";
 import { Button } from "@/components/ui/Button";
-import { ArrowLeft, Plus, Film } from "lucide-react";
+import { ArrowLeft, Plus, Film, FolderOpen } from "lucide-react";
 import type { VideoProject, VideoScene } from "@/types/canvas";
 
 export default function VideoEditorPage() {
@@ -150,14 +150,24 @@ export default function VideoEditorPage() {
             <p className="mb-6 text-xs text-ash">
               Add your first scene to start building your video
             </p>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={addEmptyScene}
-              icon={<Plus size={14} strokeWidth={1.5} />}
-            >
-              Add First Scene
-            </Button>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={addEmptyScene}
+                icon={<Plus size={14} strokeWidth={1.5} />}
+              >
+                Add First Scene
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => router.push("/dashboard/assets")}
+                icon={<FolderOpen size={14} strokeWidth={1.5} />}
+              >
+                Browse Assets
+              </Button>
+            </div>
           </div>
         )}
       </div>

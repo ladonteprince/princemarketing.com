@@ -24,6 +24,7 @@ import {
   GripVertical,
   Sparkles,
   ChevronRight,
+  FolderOpen,
 } from "lucide-react";
 import type {
   VideoScene,
@@ -1013,23 +1014,39 @@ export function VideoEditor({
                   </div>
                 </div>
               ) : (
-                <button
-                  onClick={() => {
-                    setInsertIndex(null);
-                    setShowAddScene(true);
-                  }}
-                  className="
-                    flex h-44 w-24 shrink-0 flex-col items-center justify-center
-                    rounded-2xl border border-dashed border-smoke/60
-                    text-ash/40 hover:text-royal hover:border-royal/40 hover:bg-royal/[0.02]
-                    transition-all duration-200 cursor-pointer
-                  "
-                >
-                  <Plus size={22} strokeWidth={1.5} />
-                  <span className="mt-1.5 text-[10px] font-medium">
-                    Add Scene
-                  </span>
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setInsertIndex(null);
+                      setShowAddScene(true);
+                    }}
+                    className="
+                      flex h-44 w-24 shrink-0 flex-col items-center justify-center
+                      rounded-2xl border border-dashed border-smoke/60
+                      text-ash/40 hover:text-royal hover:border-royal/40 hover:bg-royal/[0.02]
+                      transition-all duration-200 cursor-pointer
+                    "
+                  >
+                    <Plus size={22} strokeWidth={1.5} />
+                    <span className="mt-1.5 text-[10px] font-medium">
+                      Add Scene
+                    </span>
+                  </button>
+                  <a
+                    href="/dashboard/assets"
+                    className="
+                      flex h-44 w-24 shrink-0 flex-col items-center justify-center
+                      rounded-2xl border border-dashed border-smoke/60
+                      text-ash/40 hover:text-royal hover:border-royal/40 hover:bg-royal/[0.02]
+                      transition-all duration-200 cursor-pointer no-underline
+                    "
+                  >
+                    <FolderOpen size={22} strokeWidth={1.5} />
+                    <span className="mt-1.5 text-[10px] font-medium text-center leading-tight">
+                      Browse Assets
+                    </span>
+                  </a>
+                </div>
               )}
             </div>
           </>
