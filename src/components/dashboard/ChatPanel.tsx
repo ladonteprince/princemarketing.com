@@ -292,7 +292,7 @@ async function executeAction(
           body: JSON.stringify({
             title: action.title ?? "Scheduled Post",
             content: action.content ?? "",
-            platform: action.platform ?? "instagram",
+            platform: (action.platform ?? "INSTAGRAM").toUpperCase(),
             scheduledAt: action.scheduledAt ?? new Date(Date.now() + 86400000).toISOString(),
           }),
         });
