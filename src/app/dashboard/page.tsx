@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { Send } from "lucide-react";
+import { Send, ArrowRight } from "lucide-react";
 import { Canvas } from "@/components/dashboard/Canvas";
 import { ChatPanel } from "@/components/dashboard/ChatPanel";
 import { VideoEditor } from "@/components/dashboard/VideoEditor";
@@ -47,6 +47,11 @@ export default function DashboardPage() {
     return localStorage.getItem(ACTIVE_VIDEO_STORAGE_KEY) || null;
   });
 
+  // Recent assets for quick-links strip
+  const [recentAssets, setRecentAssets] = useState<
+    { id: string; url: string; type: string; name?: string }[]
+  >([]);
+
   // Persist canvas nodes to localStorage
   useEffect(() => {
     localStorage.setItem(CANVAS_STORAGE_KEY, JSON.stringify(nodes));
@@ -65,6 +70,16 @@ export default function DashboardPage() {
       localStorage.removeItem(ACTIVE_VIDEO_STORAGE_KEY);
     }
   }, [activeVideoProject]);
+
+  // Fetch recent assets on mount
+  useEffect(() => {
+    fetch("/api/user/assets?limit=6")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) setRecentAssets(data);
+      })
+      .catch(() => {});
+  }, []);
 
   const handleCanvasAction = useCallback(
     (action: CanvasAction) => {
@@ -233,6 +248,46 @@ export default function DashboardPage() {
 
       {/* Onboarding checklist for new users */}
       <OnboardingChecklist nodes={nodes} />
+
+      {/* Recent assets quick-links */}
+      {recentAssets.length > 0 && (
+        <div className="flex items-center gap-3 border-b border-smoke px-4 py-3">
+          <span className="shrink-0 text-xs font-semibold text-cloud">Recent Assets</span>
+          <div className="flex flex-1 items-center gap-3 overflow-x-auto">
+            {recentAssets.map((asset) => {
+              const src = asset.url.startsWith("https://princemarketing.ai/")
+                ? `/api/proxy/image?url=${encodeURIComponent(asset.url)}`
+                : asset.url;
+              return (
+                <button
+                  key={asset.id}
+                  onClick={() => {
+                    localStorage.setItem(
+                      "pm-editor-import",
+                      JSON.stringify({ url: asset.url, type: asset.type }),
+                    );
+                    window.location.href = "/dashboard/video/new";
+                  }}
+                  className="shrink-0 overflow-hidden rounded-lg transition-transform hover:scale-105 hover:ring-1 hover:ring-royal/40"
+                  title={asset.name || "Open in editor"}
+                >
+                  <img
+                    src={src}
+                    alt={asset.name || "Asset"}
+                    className="h-16 w-16 rounded-lg object-cover"
+                  />
+                </button>
+              );
+            })}
+          </div>
+          <a
+            href="/dashboard/assets"
+            className="flex shrink-0 items-center gap-1 text-xs text-ash transition-colors hover:text-royal"
+          >
+            View All <ArrowRight size={12} />
+          </a>
+        </div>
+      )}
 
       {/* Main split panel: Canvas + Chat */}
       <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">

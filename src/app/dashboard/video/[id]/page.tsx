@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Header } from "@/components/layout/Header";
 import { VideoEditor } from "@/components/dashboard/VideoEditor";
 import { Button } from "@/components/ui/Button";
-import { ArrowLeft, Plus, Film, FolderOpen } from "lucide-react";
+import { ArrowLeft, Plus, Film, FolderOpen, CheckCircle } from "lucide-react";
 import type { VideoProject, VideoScene } from "@/types/canvas";
 
 export default function VideoEditorPage() {
@@ -23,6 +23,7 @@ export default function VideoEditorPage() {
 
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(project.title);
+  const [toast, setToast] = useState<string | null>(null);
 
   // Import asset from Assets page via localStorage
   useEffect(() => {
@@ -44,14 +45,25 @@ export default function VideoEditorPage() {
           referenceImageIds: [],
           versions: [],
         };
-        setProject(prev => ({
-          ...prev,
-          title: imported.prompt?.slice(0, 40) ?? prev.title,
-          scenes: [...prev.scenes, newScene],
-        }));
+        setProject(prev => {
+          const sceneNum = prev.scenes.length + 1;
+          setToast(`${imported.type === "video" ? "Video" : "Image"} imported as Scene ${sceneNum}`);
+          return {
+            ...prev,
+            title: imported.prompt?.slice(0, 40) ?? prev.title,
+            scenes: [...prev.scenes, newScene],
+          };
+        });
       } catch { /* ignore corrupt data */ }
     }
   }, []);
+
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   // TODO: Load project from database if it exists
   // useEffect(() => {
@@ -171,6 +183,14 @@ export default function VideoEditorPage() {
           </div>
         )}
       </div>
+
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-lg bg-royal/90 px-4 py-2.5 text-sm font-medium text-white shadow-lg">
+          <CheckCircle size={16} strokeWidth={1.5} />
+          {toast}
+        </div>
+      )}
     </div>
   );
 }

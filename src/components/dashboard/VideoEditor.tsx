@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import {
@@ -501,6 +501,152 @@ function SceneConnector({ onInsert }: { onInsert: () => void }) {
   );
 }
 
+/* ─── Asset Drawer (inline) ────────────────────────────────────────── */
+
+type AssetFromAPI = {
+  id: string;
+  type: string;
+  status: string;
+  url: string;
+  prompt: string;
+  createdAt: string;
+};
+
+function AssetDrawer({
+  open,
+  onClose,
+  onImport,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onImport: (asset: AssetFromAPI) => void;
+}) {
+  const [assets, setAssets] = useState<AssetFromAPI[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    fetch("/api/user/assets?limit=50")
+      .then((r) => r.json())
+      .then((data) => {
+        const visual = (data.assets ?? []).filter(
+          (a: AssetFromAPI) => a.type === "image" || a.type === "video"
+        );
+        setAssets(visual);
+      })
+      .catch(() => setAssets([]))
+      .finally(() => setLoading(false));
+  }, [open]);
+
+  return (
+    <>
+      {/* Backdrop */}
+      {open && (
+        <div
+          className="fixed inset-0 z-40 bg-void/40 backdrop-blur-sm"
+          onClick={onClose}
+        />
+      )}
+
+      {/* Panel */}
+      <div
+        className={`
+          fixed top-0 right-0 z-50 flex h-full w-80 flex-col
+          border-l border-smoke bg-graphite
+          transition-transform duration-300 ease-in-out
+          ${open ? "translate-x-0" : "translate-x-full"}
+        `}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-smoke/60 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <FolderOpen size={16} className="text-royal" />
+            <h3 className="text-sm font-semibold text-cloud">Your Assets</h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-ash hover:text-cloud hover:bg-slate/50 transition-colors cursor-pointer"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center gap-2 pt-20 text-ash">
+              <Loader2 size={24} className="animate-spin text-royal" />
+              <span className="text-xs">Loading assets...</span>
+            </div>
+          ) : assets.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 pt-20 text-ash">
+              <FolderOpen size={32} strokeWidth={1} className="text-ash/40" />
+              <span className="text-xs">No image or video assets found</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {assets.map((asset) => (
+                <div
+                  key={asset.id}
+                  className="group/asset flex flex-col overflow-hidden rounded-xl border border-smoke/60 bg-slate/30 transition-all hover:border-royal/40 hover:shadow-lg hover:shadow-void/30"
+                >
+                  {/* Thumbnail */}
+                  <div className="relative aspect-video w-full overflow-hidden bg-void/40">
+                    {asset.type === "video" ? (
+                      <video
+                        src={asset.url}
+                        muted
+                        className="h-full w-full object-cover"
+                        onMouseEnter={(e) => (e.target as HTMLVideoElement).play()}
+                        onMouseLeave={(e) => {
+                          const v = e.target as HTMLVideoElement;
+                          v.pause();
+                          v.currentTime = 0;
+                        }}
+                      />
+                    ) : (
+                      <img
+                        src={asset.url}
+                        alt={asset.prompt}
+                        className="h-full w-full object-cover"
+                      />
+                    )}
+                    <Badge
+                      variant="default"
+                      className="absolute top-1.5 left-1.5 text-[9px] px-1.5 py-0.5 bg-void/70 backdrop-blur-sm text-cloud border-0"
+                    >
+                      {asset.type === "video" ? "Video" : "Image"}
+                    </Badge>
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex flex-1 flex-col gap-2 p-2.5">
+                    <p className="line-clamp-2 text-[10px] leading-tight text-ash">
+                      {asset.prompt || "Untitled asset"}
+                    </p>
+                    <button
+                      onClick={() => onImport(asset)}
+                      className="
+                        mt-auto flex items-center justify-center gap-1 rounded-lg
+                        bg-royal/10 px-2 py-1.5 text-[10px] font-semibold text-royal
+                        hover:bg-royal hover:text-white transition-all duration-200 cursor-pointer
+                      "
+                    >
+                      <Plus size={12} />
+                      Import
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 /* ─── Main Editor ───────────────────────────────────────────────────── */
 
 export function VideoEditor({
@@ -518,6 +664,8 @@ export function VideoEditor({
   const sourceImageInputRef = useRef<HTMLInputElement>(null);
   const refImageInputRef = useRef<HTMLInputElement>(null);
   const [pendingSourceSceneId, setPendingSourceSceneId] = useState<string | null>(null);
+  const [showAssetDrawer, setShowAssetDrawer] = useState(false);
+  const [deletedScene, setDeletedScene] = useState<{scene: VideoScene; index: number} | null>(null);
 
   /* ─ Helpers ─ */
 
@@ -651,10 +799,46 @@ export function VideoEditor({
   }
 
   function handleDeleteScene(sceneId: string) {
+    const idx = project.scenes.findIndex((s) => s.id === sceneId);
+    const scene = project.scenes[idx];
+    if (scene) setDeletedScene({ scene, index: idx });
     updateProject({
       scenes: project.scenes.filter((s) => s.id !== sceneId),
     });
   }
+
+  function handleUndoDelete() {
+    if (!deletedScene) return;
+    const scenes = [...project.scenes];
+    scenes.splice(deletedScene.index, 0, deletedScene.scene);
+    updateProject({ scenes });
+    setDeletedScene(null);
+  }
+
+  // Auto-clear undo state after 5 seconds
+  useEffect(() => {
+    if (!deletedScene) return;
+    const timer = setTimeout(() => setDeletedScene(null), 5000);
+    return () => clearTimeout(timer);
+  }, [deletedScene]);
+
+  // Keyboard shortcut: Delete/Backspace removes selected scene
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Delete" || e.key === "Backspace") {
+        // Don't intercept when typing in an input/textarea
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA") return;
+        if (selectedSceneId) {
+          e.preventDefault();
+          handleDeleteScene(selectedSceneId);
+          setSelectedSceneId(null);
+        }
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
 
   async function handleAddScene(atIndex?: number) {
     if (!newPrompt.trim()) return;
@@ -1032,20 +1216,20 @@ export function VideoEditor({
                       Add Scene
                     </span>
                   </button>
-                  <a
-                    href="/dashboard/assets"
+                  <button
+                    onClick={() => setShowAssetDrawer(true)}
                     className="
                       flex h-44 w-24 shrink-0 flex-col items-center justify-center
                       rounded-2xl border border-dashed border-smoke/60
                       text-ash/40 hover:text-royal hover:border-royal/40 hover:bg-royal/[0.02]
-                      transition-all duration-200 cursor-pointer no-underline
+                      transition-all duration-200 cursor-pointer
                     "
                   >
                     <FolderOpen size={22} strokeWidth={1.5} />
                     <span className="mt-1.5 text-[10px] font-medium text-center leading-tight">
                       Browse Assets
                     </span>
-                  </a>
+                  </button>
                 </div>
               )}
             </div>
@@ -1172,6 +1356,43 @@ export function VideoEditor({
           </div>
         )}
       </div>
+
+      {/* ── Asset Drawer ───────────────────────────────────────── */}
+      <AssetDrawer
+        open={showAssetDrawer}
+        onClose={() => setShowAssetDrawer(false)}
+        onImport={(asset: { id: string; type: string; url: string; prompt: string }) => {
+          const newScene: VideoScene = {
+            id: crypto.randomUUID(),
+            prompt: asset.prompt || "Imported asset",
+            duration: 5,
+            trimStart: 0,
+            trimEnd: 5,
+            status: "ready",
+            mode: asset.type === "video" ? "t2v" : "i2v",
+            referenceImageIds: [],
+            versions: [],
+            ...(asset.type === "video"
+              ? { videoUrl: asset.url }
+              : { sourceImageUrl: asset.url }),
+          };
+          updateProject({ scenes: [...project.scenes, newScene] });
+        }}
+      />
+
+      {/* ── Undo Delete Bar ────────────────────────────────────── */}
+      {deletedScene && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border border-smoke bg-graphite px-4 py-2.5 shadow-xl">
+          <Undo2 size={14} strokeWidth={1.5} className="text-ash" />
+          <span className="text-sm text-cloud">Scene deleted</span>
+          <button
+            onClick={handleUndoDelete}
+            className="text-royal font-semibold cursor-pointer hover:text-royal/80 transition-colors text-sm"
+          >
+            Undo
+          </button>
+        </div>
+      )}
     </div>
   );
 }
