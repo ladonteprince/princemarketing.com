@@ -3,8 +3,12 @@ import { auth } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limiter";
 import { z } from "zod";
 
+const API_BASE = process.env.PRINCE_API_URL || "https://princemarketing.ai";
+const API_KEY = process.env.PRINCE_API_KEY || "";
+
 const requestSchema = z.object({
   projectId: z.string(),
+  audioUrl: z.string().optional(),
   scenes: z.array(
     z.object({
       videoUrl: z.string(),
@@ -37,7 +41,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
-    const { projectId, scenes } = parsed.data;
+    const { projectId, scenes, audioUrl } = parsed.data;
 
     if (scenes.length === 0) {
       return NextResponse.json(
@@ -46,38 +50,51 @@ export async function POST(request: Request) {
       );
     }
 
-    // TODO: Integrate with ffmpeg or the .ai API for video stitching
-    // In production, this would:
-    // 1. Download each scene video
-    // 2. Apply trim points (trimStart, trimEnd) to each clip
-    // 3. Concatenate all clips with ffmpeg
-    // 4. Upload the final video
-    // 5. Return the URL
-    //
-    // Example ffmpeg approach:
-    // for each scene, create a trimmed segment:
-    //   ffmpeg -i scene.mp4 -ss trimStart -to trimEnd -c copy trimmed_scene.mp4
-    // then concat:
-    //   ffmpeg -f concat -i filelist.txt -c copy final.mp4
-    //
-    // Or delegate to .ai API:
-    // const res = await fetch(`${process.env.AI_ENGINE_URL}/api/video/stitch`, {
-    //   method: "POST",
-    //   headers: {
-    //     "Content-Type": "application/json",
-    //     "Authorization": `Bearer ${process.env.AI_ENGINE_API_KEY}`,
-    //   },
-    //   body: JSON.stringify({ projectId, scenes }),
-    // });
+    // Resolve proxy URLs back to .ai URLs for the backend
+    const resolvedScenes = scenes.map((s) => {
+      let videoUrl = s.videoUrl;
+      if (videoUrl.startsWith("/api/proxy/image?url=")) {
+        videoUrl = decodeURIComponent(videoUrl.split("url=")[1]);
+      }
+      return { ...s, videoUrl };
+    });
+
+    // Call the real .ai stitch endpoint with ffmpeg
+    const res = await fetch(`${API_BASE}/api/v1/video/stitch`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": API_KEY,
+      },
+      body: JSON.stringify({
+        projectId,
+        scenes: resolvedScenes,
+        audioUrl,
+      }),
+    });
+
+    const result = await res.json();
+
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: result?.error ?? "Stitch failed" },
+        { status: res.status },
+      );
+    }
+
+    // Proxy the video URL through our proxy
+    const videoUrl = result?.data?.videoUrl;
+    const proxiedUrl = videoUrl
+      ? `/api/proxy/image?url=${encodeURIComponent(videoUrl)}`
+      : null;
 
     return NextResponse.json({
-      videoUrl: null,
+      videoUrl: proxiedUrl,
+      directUrl: videoUrl,
       projectId,
       totalScenes: scenes.length,
-      totalDuration: scenes.reduce((sum, s) => sum + (s.trimEnd - s.trimStart), 0),
-      status: "queued",
-      message:
-        "Video stitching is queued. Connect the .ai API or configure ffmpeg to enable real stitching.",
+      totalDuration: result?.data?.totalDuration ?? scenes.reduce((sum, s) => sum + (s.trimEnd - s.trimStart), 0),
+      status: "completed",
     });
   } catch (error) {
     console.error("Video stitch error:", error);

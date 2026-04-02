@@ -961,10 +961,11 @@ export function VideoEditor({
 
       if (res.ok) {
         const data = await res.json();
-        if (data.videoUrl) window.open(data.videoUrl, "_blank");
+        const url = data.videoUrl || data.directUrl;
+        if (url) window.open(url, "_blank");
       }
     } catch {
-      // Would show toast
+      // Stitch failed
     } finally {
       setStitching(false);
     }
