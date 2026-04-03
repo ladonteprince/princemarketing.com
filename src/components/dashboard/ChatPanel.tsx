@@ -66,12 +66,15 @@ type AgentAction = {
   url?: string;
   label?: string;
   refLabel?: string;
-  // Composio fields
+  // Ads analytics fields
+  since?: string;
+  until?: string;
+  // Publishing fields
   mediaUrl?: string;
+  mediaUrls?: string[];
+  mediaType?: string;
   pageId?: string;
   scheduled?: number;
-  actionSlug?: string;
-  params?: Record<string, unknown>;
 };
 
 type ChatPanelProps = {
@@ -324,6 +327,10 @@ async function executeAction(
           body: JSON.stringify({
             content: action.content ?? "",
             platforms: action.platforms ?? [],
+            mediaUrl: action.mediaUrl,
+            mediaUrls: action.mediaUrls,
+            mediaType: action.mediaType ?? action.type,
+            scheduled: action.scheduled,
           }),
         });
         const data = await res.json();
@@ -349,6 +356,32 @@ async function executeAction(
           `Impressions: ${data.totalImpressions?.toLocaleString() ?? 0}`,
           `Engagement: ${data.totalEngagement?.toLocaleString() ?? 0}`,
           `Clicks: ${data.totalClicks?.toLocaleString() ?? 0}`,
+        ].join(" | ");
+        return { success: true, detail: summary };
+      } catch (err) {
+        return { success: false, detail: err instanceof Error ? err.message : "Failed" };
+      }
+    }
+
+    case "GET_ADS_ANALYTICS": {
+      try {
+        const params = new URLSearchParams();
+        if (action.platform) params.set("platform", action.platform);
+        if (action.since) params.set("since", action.since);
+        if (action.until) params.set("until", action.until);
+        const qs = params.toString();
+        const res = await fetch(`/api/analytics/ads${qs ? `?${qs}` : ""}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Ads analytics fetch failed");
+
+        const t = data.totals ?? {};
+        const summary = [
+          `Campaigns: ${t.activeCampaigns ?? 0} active`,
+          `Spend: $${parseFloat(t.spend ?? 0).toFixed(2)}`,
+          `Impressions: ${parseInt(t.impressions ?? 0).toLocaleString()}`,
+          `Clicks: ${parseInt(t.clicks ?? 0).toLocaleString()}`,
+          `CTR: ${t.ctr ?? "0"}%`,
+          `Conversions: ${t.conversions ?? 0}`,
         ].join(" | ");
         return { success: true, detail: summary };
       } catch (err) {
@@ -460,51 +493,7 @@ async function executeAction(
       return { success: true, detail: `Reference "${action.refLabel}" tagged to scene ${action.sceneIndex + 1}` };
     }
 
-    // --- Composio Social Actions ---
-    case "COMPOSIO_PUBLISH": {
-      try {
-        const res = await fetch("/api/social/composio-publish", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            platform: action.platform,
-            type: action.type ?? "text",
-            content: action.content ?? "",
-            mediaUrl: action.mediaUrl,
-            pageId: action.pageId,
-            title: action.title,
-            scheduled: action.scheduled,
-          }),
-        });
-        const data = await res.json();
-        if (data.success) {
-          return { success: true, detail: `Published ${action.type ?? "text"} to ${action.platform}` };
-        }
-        return { success: false, detail: data.error ?? "Publishing failed" };
-      } catch (err) {
-        return { success: false, detail: err instanceof Error ? err.message : "Failed" };
-      }
-    }
 
-    case "COMPOSIO_ACTION": {
-      try {
-        const res = await fetch("/api/social/composio-action", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            actionSlug: action.actionSlug,
-            params: action.params ?? {},
-          }),
-        });
-        const data = await res.json();
-        return {
-          success: data.success,
-          detail: JSON.stringify(data.data ?? data.error).slice(0, 500),
-        };
-      } catch (err) {
-        return { success: false, detail: err instanceof Error ? err.message : "Failed" };
-      }
-    }
 
     default:
       return { success: false, detail: `Unknown action: ${action.action}` };
@@ -521,6 +510,7 @@ const ACTION_LABELS: Record<string, { label: string; icon: typeof ImageIcon }> =
   SCHEDULE_POST: { label: "Scheduling post", icon: Calendar },
   PUBLISH_NOW: { label: "Publishing", icon: SendIcon },
   GET_ANALYTICS: { label: "Fetching analytics", icon: BarChart3 },
+  GET_ADS_ANALYTICS: { label: "Fetching ads analytics", icon: BarChart3 },
   GENERATE_VIDEO_SCENE: { label: "Generating scene", icon: Video },
   EXTEND_VIDEO_SCENE: { label: "Extending scene", icon: Video },
   STITCH_VIDEO: { label: "Stitching video", icon: Video },
@@ -529,8 +519,6 @@ const ACTION_LABELS: Record<string, { label: string; icon: typeof ImageIcon }> =
   TAG_REFERENCE_TO_SCENE: { label: "Tagging reference to scene", icon: ImageIcon },
   SAVE_MEMORY: { label: "Saving memory", icon: Brain },
   DELETE_MEMORY: { label: "Forgetting memory", icon: Brain },
-  COMPOSIO_PUBLISH: { label: "Publishing via Composio", icon: SendIcon },
-  COMPOSIO_ACTION: { label: "Running social action", icon: BarChart3 },
 };
 
 // Parse AI responses for structured content creation actions (legacy [NODE:...] markers)

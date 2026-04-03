@@ -63,6 +63,7 @@ When you take actions, the frontend will automatically:
 - SCHEDULE_POST: create a calendar entry
 - PUBLISH_NOW: publish content to connected social platforms
 - GET_ANALYTICS: fetch performance insights — tells you what's working, what's not, and why
+- GET_ADS_ANALYTICS: fetch ad campaign data from connected ad platforms (Meta, Google, TikTok, LinkedIn)
 - GET_RECOMMENDATIONS: get AI-powered content recommendations — what to post next, when, and where
 - WEEKLY_SUMMARY: generate a natural language weekly performance brief
 - GENERATE_VARIANTS: create A/B/C content variants with different strategic angles for the same message
@@ -336,6 +337,67 @@ The user wants hands-off generation. Do not ask for approval — just execute.`
 
             const insights = await analyzePerformance(posts);
             agentResults.analytics = { insights, postCount: posts.length };
+            break;
+          }
+
+          case "GET_ADS_ANALYTICS": {
+            // WHY: Fetch ad campaign performance from connected ad platforms so the AI
+            // can reason about paid campaign data alongside organic performance.
+            const adPlatformFilter = action.platform && action.platform !== "all" ? action.platform : undefined;
+            const adDateRange = "since" in action && "until" in action && action.since && action.until
+              ? { since: String(action.since), until: String(action.until) }
+              : undefined;
+
+            const AD_PLATFORM_TO_DB: Record<string, "FACEBOOK" | "GOOGLE_ANALYTICS" | "TIKTOK" | "LINKEDIN"> = {
+              meta: "FACEBOOK",
+              google: "GOOGLE_ANALYTICS",
+              tiktok: "TIKTOK",
+              linkedin: "LINKEDIN",
+            };
+
+            const adDbTypes = adPlatformFilter
+              ? [AD_PLATFORM_TO_DB[adPlatformFilter]].filter(Boolean)
+              : Object.values(AD_PLATFORM_TO_DB);
+
+            const adConnections = await db.platform.findMany({
+              where: {
+                userId,
+                connected: true,
+                accessToken: { not: null },
+                type: { in: adDbTypes },
+              },
+              select: { type: true, accessToken: true },
+            });
+
+            const DB_TO_AD: Record<string, string> = {
+              FACEBOOK: "meta",
+              GOOGLE_ANALYTICS: "google",
+              TIKTOK: "tiktok",
+              LINKEDIN: "linkedin",
+            };
+
+            const { fetchAllAdsAnalytics, summarizeAdsData } = await import("@/lib/social/ads");
+
+            // WHY: Advertiser IDs and customer IDs come from environment variables since
+            // the Platform model stores OAuth tokens, not platform-specific ad account IDs.
+            const mappedConns = adConnections
+              .filter((c): c is typeof c & { accessToken: string } => c.accessToken !== null)
+              .map((c) => ({
+                platform: DB_TO_AD[c.type] as "meta" | "google" | "tiktok" | "linkedin",
+                accessToken: c.accessToken,
+                advertiserId: process.env.TIKTOK_ADVERTISER_ID,
+                customerId: process.env.GOOGLE_ADS_CUSTOMER_ID,
+              }))
+              .filter((c) => c.platform !== undefined);
+
+            const adsData = await fetchAllAdsAnalytics(mappedConns, adDateRange);
+            const adsSummary = summarizeAdsData(adsData);
+
+            agentResults.adsAnalytics = {
+              summary: adsSummary,
+              data: adsData,
+              connectedPlatforms: mappedConns.map((c) => c.platform),
+            };
             break;
           }
 

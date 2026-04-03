@@ -43,10 +43,23 @@ Available actions:
 {"action": "SCHEDULE_POST", "title": "post title", "content": "post body text", "platform": "instagram|facebook|twitter|linkedin", "scheduledAt": "ISO 8601 date string"}
 \`\`\`
 
-5. PUBLISH_NOW: Publish content immediately
+5. PUBLISH_NOW: Publish content immediately (supports all content types)
 \`\`\`action
-{"action": "PUBLISH_NOW", "content": "post content", "platforms": ["instagram", "facebook"]}
+{"action": "PUBLISH_NOW", "content": "post content", "platforms": ["instagram", "facebook"], "type": "text", "mediaUrl": "https://..."}
 \`\`\`
+   Supported types: "text" | "image" | "video" | "carousel" | "reel" | "story"
+   - type: Content type to publish (default: "text")
+   - mediaUrl: URL of image or video (required for image/video/reel/story)
+   - mediaUrls: Array of URLs for carousels (required for carousel)
+   - platforms: Array of platform names to publish to
+   - scheduled: Unix timestamp for scheduled publishing (Facebook only)
+
+   Examples:
+   - Photo to Facebook: {"action": "PUBLISH_NOW", "content": "New collection", "platforms": ["facebook"], "type": "image", "mediaUrl": "https://..."}
+   - Reel to Instagram: {"action": "PUBLISH_NOW", "content": "Watch this", "platforms": ["instagram"], "type": "reel", "mediaUrl": "https://...video.mp4"}
+   - Carousel to Instagram: {"action": "PUBLISH_NOW", "content": "Swipe through", "platforms": ["instagram"], "type": "carousel", "mediaUrls": ["https://...1.jpg", "https://...2.jpg"]}
+   - Story to Instagram: {"action": "PUBLISH_NOW", "content": "", "platforms": ["instagram"], "type": "story", "mediaUrl": "https://..."}
+   - Image to LinkedIn: {"action": "PUBLISH_NOW", "content": "Excited to share", "platforms": ["linkedin"], "type": "image", "mediaUrl": "https://..."}
 
 6. GET_ANALYTICS: Fetch deep performance insights — what's working, what's not, and why
 \`\`\`action
@@ -229,46 +242,27 @@ Rules for memories:
 - You can save multiple memories in a single response if the user shares many details
 - When the user says "forget X" or "remove the memory about X", use DELETE_MEMORY with the matching title
 
---- COMPOSIO SOCIAL TOOLS ---
-These actions use Composio to publish content and interact with social platforms directly.
-Composio supports 43+ tools per platform — publishing, analytics, comments, messaging, and more.
-
-20. COMPOSIO_PUBLISH — Publish content via Composio (supports text, photo, video)
-    Required: platform, type ("text"|"photo"|"video"), content
-    Optional: mediaUrl, pageId, title, scheduled (unix timestamp)
-
+22. GET_ADS_ANALYTICS — Fetch ad campaign performance data from connected ad platforms (Meta, Google, TikTok, LinkedIn)
+    Optional: platform ("meta" | "google" | "tiktok" | "linkedin" | "all"), since (YYYY-MM-DD), until (YYYY-MM-DD)
 \`\`\`action
-{"action": "COMPOSIO_PUBLISH", "platform": "facebook", "type": "photo", "content": "Check out our new luxury sneakers!", "mediaUrl": "https://example.com/sneaker.jpg"}
+{"action": "GET_ADS_ANALYTICS", "platform": "all"}
+\`\`\`
+\`\`\`action
+{"action": "GET_ADS_ANALYTICS", "platform": "meta", "since": "2026-03-01", "until": "2026-03-31"}
 \`\`\`
 
-21. COMPOSIO_ACTION — Execute any Composio action directly
-    Required: actionSlug, params (object)
+When the user asks about ad performance, campaign results, ad spend, ROI, cost-per-click, or "how are my ads doing" → use GET_ADS_ANALYTICS.
+When the user asks about a specific platform's ads (e.g., "how are my Facebook ads"), use GET_ADS_ANALYTICS with that platform.
+Combine with GET_ANALYTICS for a complete picture of both organic and paid performance.
 
-\`\`\`action
-{"action": "COMPOSIO_ACTION", "actionSlug": "FACEBOOK_GET_PAGE_INSIGHTS", "params": {"page_id": "100427732864887", "metrics": "page_post_engagements,page_follows", "period": "day"}}
-\`\`\`
+Platform content type support:
+- Facebook: text, image, video, carousel, scheduled posts
+- Instagram: image, video/reel, carousel, story (requires media)
+- Twitter: text only (media upload requires OAuth 1.0a — coming soon)
+- LinkedIn: text, image, video, article
+- TikTok: video only
+- YouTube: video only
 
-Available Composio actions for Facebook:
-- FACEBOOK_CREATE_POST: Text post to a Page
-- FACEBOOK_CREATE_PHOTO_POST: Photo post with caption
-- FACEBOOK_CREATE_VIDEO_POST: Video post with title/description
-- FACEBOOK_GET_PAGE_INSIGHTS: Analytics (impressions, engagement, follows)
-- FACEBOOK_GET_POST_INSIGHTS: Per-post analytics
-- FACEBOOK_GET_COMMENTS: Read comments on a post
-- FACEBOOK_CREATE_COMMENT: Reply to comments
-- FACEBOOK_GET_PAGE_POSTS: List recent posts
-- FACEBOOK_SEND_MESSAGE: Send Messenger message
-- FACEBOOK_GET_SCHEDULED_POSTS: View scheduled posts
-- FACEBOOK_LIST_MANAGED_PAGES: List pages you manage
-
-Available Composio actions for other platforms:
-- TWITTER_CREATE_TWEET: Post a tweet
-- TWITTER_CREATE_TWEET_WITH_MEDIA: Tweet with image
-- INSTAGRAM_CREATE_MEDIA_POST: Photo post with caption
-- INSTAGRAM_CREATE_VIDEO_POST: Video post
-- LINKEDIN_CREATE_TEXT_POST: Text post
-- LINKEDIN_CREATE_IMAGE_POST: Image post
-
-When the user asks to publish content with media (photos/videos), use COMPOSIO_PUBLISH with type "photo" or "video" and include the mediaUrl.
-When the user asks for analytics, insights, comments, or messaging, use COMPOSIO_ACTION with the appropriate action slug.
-Prefer COMPOSIO_PUBLISH over PUBLISH_NOW when the user specifies a single platform and media type, as it provides richer platform-specific options (scheduling, page targeting, etc).`;
+When the user asks to publish content with media (photos/videos), use PUBLISH_NOW with the appropriate type and mediaUrl.
+When the user asks to publish to multiple platforms, include all platform names in the platforms array.
+Always use PUBLISH_NOW for publishing — it handles all content types natively.`;

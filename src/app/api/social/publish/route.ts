@@ -20,6 +20,9 @@ const publishSchema = z.object({
   platforms: z.array(z.string()).min(1, "At least one platform required"),
   platformContent: z.record(z.string(), platformContentValue).optional(),
   mediaUrl: z.string().url().optional(),
+  mediaUrls: z.array(z.string().url()).max(20).optional(),
+  mediaType: z.enum(["image", "video", "carousel", "reel", "story"]).optional(),
+  scheduled: z.number().optional(),
   calendarEntryId: z.string().optional(),
 });
 
@@ -41,7 +44,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { content, platforms, platformContent, mediaUrl, calendarEntryId } = parsed.data;
+    const { content, platforms, platformContent, mediaUrl, mediaUrls, mediaType, scheduled, calendarEntryId } = parsed.data;
 
     // Validate all requested platforms
     for (const p of platforms) {
@@ -95,6 +98,9 @@ export async function POST(request: Request) {
         content: resolvedContent,
         title: resolvedTitle,
         mediaUrl,
+        mediaUrls,
+        mediaType,
+        scheduled,
         accessToken: connected.accessToken,
       });
 

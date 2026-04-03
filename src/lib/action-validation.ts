@@ -52,6 +52,10 @@ const PublishNowAction = z.object({
   action: z.literal("PUBLISH_NOW"),
   content: z.string().max(10000).optional(),
   platforms: z.array(z.string()).max(7).optional(),
+  type: z.enum(["text", "image", "video", "carousel", "reel", "story"]).optional(),
+  mediaUrl: z.string().optional(),
+  mediaUrls: z.array(z.string()).max(20).optional(),
+  scheduled: z.number().optional(),
 });
 
 const GetAnalyticsAction = z.object({
@@ -142,6 +146,15 @@ const TagReferenceToSceneAction = z.object({
   refLabel: z.string().max(100),
 });
 
+// --- Ads Analytics Action ---
+// WHY: Lets the AI Strategist fetch ad campaign performance data from connected ad platforms.
+const GetAdsAnalyticsAction = z.object({
+  action: z.literal("GET_ADS_ANALYTICS"),
+  platform: z.enum(["meta", "google", "tiktok", "linkedin", "all"]).optional(),
+  since: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
 // --- Memory Actions ---
 // WHY: The AI saves memories about the user's brand, preferences, and past performance.
 // Memories persist across sessions via localStorage and are injected into the system prompt.
@@ -159,27 +172,6 @@ const DeleteMemoryAction = z.object({
   title: z.string().max(200),
 });
 
-// --- Composio Social Actions ---
-// WHY: Composio replaces hand-built social publishing with 43+ tools per platform.
-// These two actions cover all Composio interactions: structured publish + raw action proxy.
-
-const ComposioPublishAction = z.object({
-  action: z.literal("COMPOSIO_PUBLISH"),
-  platform: z.string(),
-  type: z.string().optional(),
-  content: z.string().max(10000),
-  mediaUrl: z.string().optional(),
-  pageId: z.string().optional(),
-  title: z.string().max(200).optional(),
-  scheduled: z.number().optional(),
-});
-
-const ComposioActionAction = z.object({
-  action: z.literal("COMPOSIO_ACTION"),
-  actionSlug: z.string(),
-  params: z.record(z.unknown()).optional(),
-});
-
 // Union of all valid actions — anything else is rejected
 export const ActionBlockSchema = z.discriminatedUnion("action", [
   CreateImageAction,
@@ -195,6 +187,7 @@ export const ActionBlockSchema = z.discriminatedUnion("action", [
   BuildStrategyAction,
   AudienceInsightAction,
   DistributeAction,
+  GetAdsAnalyticsAction,
   GenerateVideoSceneAction,
   ExtendVideoSceneAction,
   StitchVideoAction,
@@ -203,8 +196,6 @@ export const ActionBlockSchema = z.discriminatedUnion("action", [
   TagReferenceToSceneAction,
   SaveMemoryAction,
   DeleteMemoryAction,
-  ComposioPublishAction,
-  ComposioActionAction,
 ]);
 
 export type ValidAction = z.infer<typeof ActionBlockSchema>;
