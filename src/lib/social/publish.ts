@@ -159,20 +159,34 @@ async function publishToFacebook({ content, mediaUrl, mediaUrls, mediaType, acce
   }
 }
 
-// Instagram: Graph API via Facebook Pages
+// Instagram: Graph API — try direct IG API first, fall back to Facebook Pages method
 async function publishToInstagram({ content, mediaUrl, mediaUrls, mediaType, accessToken }: PublishParams): Promise<PublishResult> {
   try {
-    // Get Instagram business account ID via Facebook page
-    const pagesRes = await fetch(
-      `https://graph.facebook.com/v19.0/me/accounts?fields=instagram_business_account&access_token=${accessToken}`,
-    );
-    const pagesData = await pagesRes.json();
-    // Search ALL pages for an Instagram business account, not just the first one
-    const pageWithIg = (pagesData.data ?? []).find((p: any) => p.instagram_business_account?.id);
-    const igAccountId = pageWithIg?.instagram_business_account?.id;
+    let igAccountId: string | null = null;
+
+    // Method 1: Try direct Instagram Graph API (works with instagram_business_basic token)
+    try {
+      const meRes = await fetch(
+        `https://graph.instagram.com/v19.0/me?fields=id,username&access_token=${accessToken}`,
+      );
+      const meData = await meRes.json();
+      if (meData.id && !meData.error) {
+        igAccountId = meData.id;
+      }
+    } catch {}
+
+    // Method 2: Fall back to Facebook Pages method
+    if (!igAccountId) {
+      const pagesRes = await fetch(
+        `https://graph.facebook.com/v19.0/me/accounts?fields=instagram_business_account&access_token=${accessToken}`,
+      );
+      const pagesData = await pagesRes.json();
+      const pageWithIg = (pagesData.data ?? []).find((p: any) => p.instagram_business_account?.id);
+      igAccountId = pageWithIg?.instagram_business_account?.id ?? null;
+    }
 
     if (!igAccountId) {
-      return { success: false, error: "No Instagram business account linked. Link one in Facebook Page settings." };
+      return { success: false, error: "No Instagram business account found. Re-connect Instagram in Settings." };
     }
 
     // Story post (image or video)
