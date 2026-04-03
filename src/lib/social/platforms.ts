@@ -11,7 +11,7 @@ export const PLATFORMS = {
     scopes: ["pages_show_list", "pages_read_engagement", "pages_manage_posts"],
     // NOTE: instagram_business_* scopes are handled via the config_id in Facebook Login for Business
     // They must be configured in Meta Developer Console under the Login Configuration, not as URL scopes
-    configId: "940418525511002",
+    configId: "1296730438652781",
     icon: "Instagram",
     envPrefix: "INSTAGRAM",
     dbType: "INSTAGRAM" as const,
