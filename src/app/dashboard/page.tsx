@@ -353,7 +353,7 @@ export default function DashboardPage() {
   }, [activeProject]);
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-full flex-col">
       {/* KPI summary bar — hidden on mobile (chat-first) */}
       <div className="hidden lg:block">
         <KPIBar />
@@ -491,7 +491,7 @@ export default function DashboardPage() {
         {/* Chat panel — full height on mobile (chat-first), side panel on desktop */}
         <div
           className={`
-            flex-1 lg:flex-none w-full shrink-0 transition-[width] duration-300 ease-in-out
+            flex-1 min-h-0 lg:flex-none w-full shrink-0 transition-[width] duration-300 ease-in-out
             lg:w-auto
             ${chatCollapsed ? "lg:w-12" : "lg:w-[30%] lg:min-w-[320px] lg:max-w-[480px]"}
           `}

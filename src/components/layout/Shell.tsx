@@ -29,7 +29,7 @@ export function Shell({ children }: ShellProps) {
   }, []);
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-[100dvh] overflow-hidden">
       {/* Mobile sidebar overlay */}
       {mobileSidebarOpen && (
         <div
@@ -50,7 +50,7 @@ export function Shell({ children }: ShellProps) {
       )}
 
       {/* Main content area */}
-      <main className="min-w-0 flex-1 md:ml-[var(--sidebar-width)] transition-[margin] duration-[var(--transition-page)]">
+      <main className="min-w-0 flex-1 flex flex-col md:ml-[var(--sidebar-width)] transition-[margin] duration-[var(--transition-page)]">
         {/* Mobile top bar with hamburger + chat button */}
         <div className="flex h-14 items-center justify-between border-b border-smoke px-4 md:hidden">
           <div className="flex items-center gap-2">
@@ -85,7 +85,9 @@ export function Shell({ children }: ShellProps) {
             </button>
           )}
         </div>
-        {children}
+        <div className="flex-1 min-h-0">
+          {children}
+        </div>
       </main>
 
       {/* Global Chat Panel — collapsible right panel on desktop, full-screen overlay on mobile */}
