@@ -46,6 +46,7 @@ const requestSchema = z.object({
     )
     .optional(),
   creationMode: z.enum(["plan", "auto"]).optional(),
+  memories: z.string().optional(),
 });
 
 // WHY: Agentic system prompt — tells Claude to return structured action blocks
@@ -121,7 +122,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
-    const { message, history, existingNodes, creationMode } = parsed.data;
+    const { message, history, existingNodes, creationMode, memories } = parsed.data;
 
     // WHY: Inject the user's social media context so the AI can give personalized advice.
     // e.g. "Based on your recent Instagram posts about sneakers..." instead of generic tips.
@@ -206,6 +207,7 @@ export async function POST(request: Request) {
     if (existingNodes?.length) contextSources.push("existing_nodes");
     if (safeSocialContext) contextSources.push("social_context");
     if (analyticsContext) contextSources.push("analytics_context");
+    if (memories) contextSources.push("user_memories");
 
     const systemPrompt = WORKSPACE_SYSTEM_PROMPT.replace(
       "{existingNodes}",
@@ -219,6 +221,9 @@ export async function POST(request: Request) {
       ? `\n\nUser's recent analytics (reference this proactively when relevant):\n${analyticsContext}\nWhen the user asks to create content, suggest using GENERATE_VARIANTS to get A/B options. When they ask about performance, use GET_ANALYTICS for deep insights.`
       : "")
     + assetsContext
+    + (memories
+      ? `\n\nUSER MEMORIES (remembered from past conversations — use these to personalize your responses. Reference them naturally, e.g. "Based on what I remember about your brand..."):\n${memories}`
+      : "")
     + (creationMode === "plan"
       ? `\n\nCREATION MODE: PLAN
 When the user asks you to create a video or commercial:

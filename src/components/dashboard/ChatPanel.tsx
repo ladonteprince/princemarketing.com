@@ -21,6 +21,7 @@ import {
   Trash2,
   ListChecks,
   Rocket,
+  Brain,
 } from "lucide-react";
 import type { ContentNode, CanvasAction } from "@/types/canvas";
 
@@ -471,6 +472,7 @@ const ACTION_LABELS: Record<string, { label: string; icon: typeof ImageIcon }> =
   SET_SCENE_MODE: { label: "Setting scene mode", icon: Video },
   ADD_REFERENCE_IMAGE: { label: "Adding reference image", icon: ImageIcon },
   TAG_REFERENCE_TO_SCENE: { label: "Tagging reference to scene", icon: ImageIcon },
+  SAVE_MEMORY: { label: "Saving memory", icon: Brain },
 };
 
 // Parse AI responses for structured content creation actions (legacy [NODE:...] markers)
@@ -510,6 +512,15 @@ function parseContentActions(
 }
 
 const CHAT_STORAGE_KEY = "pm-chat-messages";
+const MEMORIES_STORAGE_KEY = "pm-ai-memories";
+
+type AIMemory = {
+  id: string;
+  type: "brand" | "feedback" | "project" | "asset" | "reference";
+  title: string;
+  content: string;
+  createdAt: string;
+};
 
 export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPanelProps) {
   const { data: session } = useSession();
@@ -525,7 +536,19 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
   const [error, setError] = useState<string | null>(null);
   const [sessionId] = useState(() => crypto.randomUUID());
   const [creationMode, setCreationMode] = useState<"plan" | "auto">("plan");
+  const [memories, setMemories] = useState<AIMemory[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      return JSON.parse(localStorage.getItem(MEMORIES_STORAGE_KEY) || "[]");
+    } catch { return []; }
+  });
+  const [showMemories, setShowMemories] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Persist memories to localStorage
+  useEffect(() => {
+    localStorage.setItem(MEMORIES_STORAGE_KEY, JSON.stringify(memories));
+  }, [memories]);
 
   // Persist chat messages to localStorage (keep last 50 to prevent bloat)
   useEffect(() => {
@@ -548,10 +571,14 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
         e.preventDefault();
         setCreationMode(prev => prev === "plan" ? "auto" : "plan");
       }
+      // Escape closes memories dropdown
+      if (e.key === "Escape" && showMemories) {
+        setShowMemories(false);
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [showMemories]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -559,7 +586,8 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
     }
   }, [messages, isThinking]);
 
-  // WHY: Process agentic actions returned by the AI and update the message with live status
+  // WHY: Process agentic actions returned by the AI and update the message with live status.
+  // SAVE_MEMORY actions are handled inline here (they need setMemories), others delegate to executeAction.
   const processActions = useCallback(
     async (
       agentActions: AgentAction[],
@@ -590,19 +618,38 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
           ),
         );
 
-        // Progress callback for SSE-streamed actions (video generation)
-        const statusCallback = (update: StatusUpdate) => {
-          statuses[i].progress = update.progress;
-          statuses[i].stage = update.stage;
-          if (update.detail) statuses[i].detail = update.detail;
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === messageId ? { ...m, actionStatuses: [...statuses] } : m,
-            ),
-          );
-        };
+        let result: { success: boolean; detail: string; nodeRef?: string };
 
-        const result = await executeAction(agentActions[i], onCanvasAction, nodes, statusCallback);
+        // Handle SAVE_MEMORY inline since it needs access to setMemories
+        if (agentActions[i].action === "SAVE_MEMORY") {
+          const newMemory: AIMemory = {
+            id: crypto.randomUUID(),
+            type: (agentActions[i].type as AIMemory["type"]) ?? "brand",
+            title: agentActions[i].title ?? "Memory",
+            content: agentActions[i].content ?? "",
+            createdAt: new Date().toISOString(),
+          };
+          setMemories((prev) => {
+            // Deduplicate by title — update existing memory if title matches
+            const filtered = prev.filter((m) => m.title.toLowerCase() !== newMemory.title.toLowerCase());
+            return [...filtered, newMemory];
+          });
+          result = { success: true, detail: `Remembered: ${newMemory.title}` };
+        } else {
+          // Progress callback for SSE-streamed actions (video generation)
+          const statusCallback = (update: StatusUpdate) => {
+            statuses[i].progress = update.progress;
+            statuses[i].stage = update.stage;
+            if (update.detail) statuses[i].detail = update.detail;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === messageId ? { ...m, actionStatuses: [...statuses] } : m,
+              ),
+            );
+          };
+
+          result = await executeAction(agentActions[i], onCanvasAction, nodes, statusCallback);
+        }
 
         statuses[i].status = result.success ? "done" : "error";
         statuses[i].detail = result.detail;
@@ -649,6 +696,9 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
           existingNodes: nodes.map((n) => ({ id: n.id, type: n.type, title: n.title })),
           fetchAssets: true,
           creationMode,
+          memories: memories.length > 0
+            ? memories.map((m) => `[${m.type}] ${m.title}: ${m.content}`).join("\n")
+            : undefined,
         }),
       });
 
@@ -792,6 +842,71 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
           </div>
         </div>
         <div className="flex items-center gap-1">
+          {/* Memory indicator */}
+          <div className="relative">
+            <button
+              onClick={() => setShowMemories(!showMemories)}
+              className={`
+                flex items-center gap-1 rounded-lg px-2 py-1 text-[10px]
+                transition-colors duration-200 cursor-pointer
+                ${memories.length > 0
+                  ? "text-royal hover:text-royal hover:bg-royal/10"
+                  : "text-ash/40 hover:text-ash hover:bg-slate/50"
+                }
+              `}
+              title={memories.length > 0 ? `${memories.length} memories saved` : "No memories yet"}
+            >
+              <Brain size={14} strokeWidth={1.5} />
+              {memories.length > 0 && (
+                <span className="font-medium tabular-nums">{memories.length}</span>
+              )}
+            </button>
+
+            {/* Memories dropdown */}
+            {showMemories && (
+              <div className="absolute right-0 top-full z-30 mt-1 w-80 rounded-xl border border-smoke bg-graphite p-3 shadow-xl max-h-72 overflow-y-auto">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-semibold text-cloud">Memories</h4>
+                  {memories.length > 0 && (
+                    <button
+                      onClick={() => { setMemories([]); setShowMemories(false); }}
+                      className="text-[9px] text-ash/50 hover:text-coral transition-colors cursor-pointer"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+                {memories.map((m) => (
+                  <div key={m.id} className="flex items-start gap-2 mb-2 pb-2 border-b border-smoke/30 last:border-0">
+                    <Badge
+                      variant={
+                        m.type === "brand" ? "royal"
+                        : m.type === "feedback" ? "amber"
+                        : m.type === "asset" ? "coral"
+                        : "mint"
+                      }
+                      className="text-[8px] shrink-0 mt-0.5"
+                    >
+                      {m.type}
+                    </Badge>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] font-medium text-cloud truncate">{m.title}</p>
+                      <p className="text-[9px] text-ash line-clamp-2">{m.content}</p>
+                    </div>
+                    <button
+                      onClick={() => setMemories((prev) => prev.filter((x) => x.id !== m.id))}
+                      className="text-ash/40 hover:text-coral shrink-0 cursor-pointer"
+                    >
+                      <Trash2 size={10} />
+                    </button>
+                  </div>
+                ))}
+                {memories.length === 0 && (
+                  <p className="text-[10px] text-ash/50 py-2">No memories yet. The AI will remember details about your brand, preferences, and past performance as you chat.</p>
+                )}
+              </div>
+            )}
+          </div>
           <button
             onClick={handleClearChat}
             className="
