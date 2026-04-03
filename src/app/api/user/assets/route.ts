@@ -15,6 +15,7 @@ type Asset = {
   prompt: string;
   createdAt: string;
   score?: number;
+  category?: string; // "character" | "prop" | "environment" | null
 };
 
 function normalizeType(raw: string): Asset["type"] {
@@ -25,7 +26,7 @@ function normalizeType(raw: string): Asset["type"] {
   return "copy";
 }
 
-function generationToAsset(gen: Generation): Asset {
+function generationToAsset(gen: Generation, metadata?: Record<string, unknown>): Asset {
   return {
     id: gen.id,
     type: normalizeType(gen.type),
@@ -33,6 +34,7 @@ function generationToAsset(gen: Generation): Asset {
     url: gen.resultUrl,
     prompt: gen.prompt,
     createdAt: gen.createdAt,
+    category: metadata?.category as string | undefined,
   };
 }
 
@@ -58,14 +60,17 @@ export async function GET(request: NextRequest) {
     // Filter out failed generations so they never appear in the user's asset library
     const filteredGenerations = generations.filter((g: any) => g.status !== "failed");
 
-    const assets: Asset[] = filteredGenerations.map((g: any) => generationToAsset({
-      id: g.id,
-      type: g.type ?? "image",
-      status: g.status ?? "passed",
-      prompt: g.prompt ?? "",
-      resultUrl: g.resultUrl ?? g.result_url,
-      createdAt: g.createdAt ?? g.created_at ?? new Date().toISOString(),
-    }));
+    const assets: Asset[] = filteredGenerations.map((g: any) => {
+      const meta = g.metadata && typeof g.metadata === "object" ? g.metadata : {};
+      return generationToAsset({
+        id: g.id,
+        type: g.type ?? "image",
+        status: g.status ?? "passed",
+        prompt: g.prompt ?? "",
+        resultUrl: g.resultUrl ?? g.result_url,
+        createdAt: g.createdAt ?? g.created_at ?? new Date().toISOString(),
+      }, meta);
+    });
 
     // Filter out internal platform assets (landing page images, etc.)
     const internalPhrases = [

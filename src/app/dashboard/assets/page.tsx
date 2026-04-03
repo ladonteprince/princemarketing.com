@@ -28,6 +28,7 @@ type Asset = {
   prompt: string;
   createdAt: string;
   score?: number;
+  category?: string; // "character" | "prop" | "environment"
 };
 
 const TYPE_FILTERS: { label: string; value: AssetType | "all"; icon: React.ElementType }[] = [
@@ -64,14 +65,22 @@ function handleUseInEditor(asset: Asset) {
   window.location.href = "/dashboard/video/new";
 }
 
+const CATEGORY_TAGS: { value: string; label: string; activeClass: string }[] = [
+  { value: "character", label: "Char", activeClass: "bg-royal/20 text-royal" },
+  { value: "prop", label: "Prop", activeClass: "bg-amber-500/20 text-amber-400" },
+  { value: "environment", label: "Env", activeClass: "bg-emerald-500/20 text-emerald-400" },
+];
+
 function AssetCard({
   asset,
   onDownload,
   onDelete,
+  onSetCategory,
 }: {
   asset: Asset;
   onDownload: (asset: Asset) => void;
   onDelete: (asset: Asset) => void;
+  onSetCategory: (assetId: string, category: string | null) => void;
 }) {
   const typeIcon: Record<AssetType, React.ElementType> = {
     image: ImageIcon,
@@ -223,6 +232,25 @@ function AssetCard({
             {new Date(asset.createdAt).toLocaleDateString()}
           </span>
         </div>
+        {/* Category tags */}
+        <div className="flex items-center gap-1">
+          {CATEGORY_TAGS.map((cat) => (
+            <button
+              key={cat.value}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSetCategory(asset.id, asset.category === cat.value ? null : cat.value);
+              }}
+              className={`rounded-full px-1.5 py-0 text-[8px] font-medium transition-colors cursor-pointer ${
+                asset.category === cat.value
+                  ? cat.activeClass
+                  : "bg-slate/30 text-ash/40 hover:text-ash"
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
         <p className="line-clamp-2 text-xs text-cloud/80 leading-relaxed">
           {asset.prompt}
         </p>
@@ -270,6 +298,31 @@ export default function AssetsPage() {
     }
     return result;
   }, [assets, activeFilter, search]);
+
+  const handleSetCategory = async (assetId: string, category: string | null) => {
+    // Optimistically update the UI
+    setAssets((prev) =>
+      prev.map((a) => (a.id === assetId ? { ...a, category: category ?? undefined } : a)),
+    );
+    try {
+      const res = await fetch(`/api/user/assets/${assetId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category }),
+      });
+      if (!res.ok) {
+        // Revert on failure
+        setAssets((prev) =>
+          prev.map((a) => (a.id === assetId ? { ...a, category: undefined } : a)),
+        );
+      }
+    } catch {
+      // Revert on error
+      setAssets((prev) =>
+        prev.map((a) => (a.id === assetId ? { ...a, category: undefined } : a)),
+      );
+    }
+  };
 
   const handleDelete = async (asset: Asset) => {
     if (!window.confirm("Delete this asset?")) return;
@@ -452,6 +505,7 @@ export default function AssetsPage() {
                 asset={asset}
                 onDownload={handleDownload}
                 onDelete={handleDelete}
+                onSetCategory={handleSetCategory}
               />
             ))}
           </div>
