@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
 import type { VideoProject, VideoScene } from "@/types/canvas";
 
@@ -32,13 +32,16 @@ export function TimelineView({
   const selectedScene =
     project.scenes.find((s) => s.id === selectedSceneId) ?? project.scenes[0];
 
-  /* Pre-compute scene start times on the global timeline */
-  const sceneStartTimes: number[] = [];
-  let accum = 0;
-  for (const scene of project.scenes) {
-    sceneStartTimes.push(accum);
-    accum += scene.trimEnd - scene.trimStart;
-  }
+  /* Pre-compute scene start times on the global timeline (memoized for stable refs) */
+  const sceneStartTimes = useMemo(() => {
+    const times: number[] = [];
+    let acc = 0;
+    for (const scene of project.scenes) {
+      times.push(acc);
+      acc += scene.trimEnd - scene.trimStart;
+    }
+    return times;
+  }, [project.scenes]);
 
   /* Sync video element when selected scene changes */
   useEffect(() => {

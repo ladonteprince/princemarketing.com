@@ -33,6 +33,7 @@ import type {
   ReferenceImage,
 } from "@/types/canvas";
 import { TimelineView } from "./TimelineView";
+import { streamGeneration } from "@/lib/api";
 
 /* ─── Props ─────────────────────────────────────────────────────────── */
 
@@ -147,7 +148,7 @@ function SceneCard({
               key={d}
               onClick={(e) => {
                 e.stopPropagation();
-                onUpdate({ duration: d, trimEnd: d });
+                onUpdate({ duration: d, trimStart: Math.min(scene.trimStart, d - 0.1), trimEnd: d });
               }}
               className={`
                 h-7 w-8 rounded-md text-[11px] font-mono transition-colors cursor-pointer
@@ -447,7 +448,7 @@ function SceneCard({
             <input
               type="range"
               min={0}
-              max={scene.duration}
+              max={Math.max(0, scene.trimEnd - 0.1)}
               step={0.1}
               value={scene.trimStart}
               onChange={(e) => {
@@ -465,7 +466,7 @@ function SceneCard({
             <label className="text-[9px] text-ash/60 uppercase tracking-wider">End</label>
             <input
               type="range"
-              min={0}
+              min={Math.min(scene.duration, scene.trimStart + 0.1)}
               max={scene.duration}
               step={0.1}
               value={scene.trimEnd}
@@ -718,12 +719,13 @@ export function VideoEditor({
       .map((id) => refs.find((r) => r.id === id))
       .filter(Boolean) as ReferenceImage[];
 
-    taggedRefs.forEach((ref, i) => {
+    taggedRefs.forEach((ref) => {
       if (ref.label && ref.label.trim()) {
-        // Replace the label name with @imageN (case-insensitive, whole word)
+        // Use global index matching the UI (characters 1-3, props 4-6, scenes 7-9)
+        const globalIdx = refs.findIndex(r => r.id === ref.id) + 1;
         const escaped = ref.label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const regex = new RegExp(`\\b${escaped}\\b`, 'gi');
-        processedPrompt = processedPrompt.replace(regex, `@image${i + 1}`);
+        processedPrompt = processedPrompt.replace(regex, `@image${globalIdx}`);
       }
     });
 
@@ -767,7 +769,6 @@ export function VideoEditor({
     const generationId = data.generationId;
     if (generationId && !data.videoUrl) {
       return new Promise((resolve) => {
-        const { streamGeneration } = require("@/lib/api");
         const cancel = streamGeneration(generationId, {
           onCompleted: (event: { data: { resultUrl?: string; score?: number } }) => {
             const videoUrl = event.data.resultUrl;
@@ -857,6 +858,13 @@ export function VideoEditor({
     setDeletedScene(null);
   }
 
+  // Auto-select first scene when none is selected
+  useEffect(() => {
+    if (!selectedSceneId && project.scenes.length > 0) {
+      setSelectedSceneId(project.scenes[0].id);
+    }
+  }, [project.scenes.length, selectedSceneId]);
+
   // Auto-clear undo state after 5 seconds
   useEffect(() => {
     if (!deletedScene) return;
@@ -868,9 +876,9 @@ export function VideoEditor({
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Delete" || e.key === "Backspace") {
-        // Don't intercept when typing in an input/textarea
+        // Don't intercept when typing in an input/textarea/contentEditable
         const tag = (e.target as HTMLElement)?.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA") return;
+        if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable) return;
         if (selectedSceneId) {
           e.preventDefault();
           handleDeleteScene(selectedSceneId);
@@ -880,7 +888,7 @@ export function VideoEditor({
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  });
+  }, [selectedSceneId]);
 
   async function handleAddScene(atIndex?: number) {
     if (!newPrompt.trim()) return;
@@ -963,6 +971,7 @@ export function VideoEditor({
   async function handleAudioFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = "";
 
     // Set blob URL for immediate local preview
     const blobUrl = URL.createObjectURL(file);
@@ -1076,6 +1085,7 @@ export function VideoEditor({
   function handleSourceImageFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !pendingSourceSceneId) return;
+    e.target.value = "";
     const url = URL.createObjectURL(file);
     updateScene(pendingSourceSceneId, { sourceImageUrl: url });
     setPendingSourceSceneId(null);
@@ -1093,6 +1103,7 @@ export function VideoEditor({
   function handleRefImageFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = "";
     const url = URL.createObjectURL(file);
     const newRef: ReferenceImage = {
       id: crypto.randomUUID(),
@@ -1692,9 +1703,20 @@ export function VideoEditor({
             <div className="flex items-center justify-between px-5 py-3 border-b border-smoke/60">
               <h3 className="text-sm font-semibold text-cloud">Preview — Stitched Export</h3>
               <div className="flex items-center gap-2">
-                <a href={stitchedUrl} download className="flex items-center gap-1.5 rounded-lg bg-royal px-3 py-1.5 text-xs font-medium text-white hover:bg-royal/80 transition-colors">
+                <button
+                  onClick={async () => {
+                    const res = await fetch(stitchedUrl!);
+                    const blob = await res.blob();
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `${project.title || "export"}.mp4`;
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg bg-royal px-3 py-1.5 text-xs font-medium text-white hover:bg-royal/80 transition-colors cursor-pointer"
+                >
                   <Download size={12} /> Download
-                </a>
+                </button>
                 <button onClick={() => window.open(stitchedUrl, "_blank")} className="flex items-center gap-1.5 rounded-lg bg-slate px-3 py-1.5 text-xs font-medium text-cloud hover:bg-smoke transition-colors cursor-pointer">
                   Open in Tab
                 </button>
