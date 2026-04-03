@@ -1071,9 +1071,9 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
         </div>
       </div>
 
-      {/* Node references bar */}
+      {/* Node references bar — hidden on mobile to save space */}
       {nodes.length > 0 && (
-        <div className="flex items-center gap-2 border-b border-smoke/50 px-4 py-2.5 overflow-x-auto">
+        <div className="hidden lg:flex items-center gap-2 border-b border-smoke/50 px-4 py-2.5 overflow-x-auto">
           <span className="shrink-0 text-[10px] uppercase tracking-widest text-ash/60 font-medium">Canvas</span>
           {nodes.slice(-5).map((node) => {
             const icons: Record<string, typeof ImageIcon> = { image: ImageIcon, video: Video, copy: FileText };

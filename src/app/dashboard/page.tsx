@@ -354,15 +354,21 @@ export default function DashboardPage() {
 
   return (
     <div className="flex h-screen flex-col">
-      {/* KPI summary bar */}
-      <KPIBar />
+      {/* KPI summary bar — hidden on mobile (chat-first) */}
+      <div className="hidden lg:block">
+        <KPIBar />
+      </div>
 
-      {/* Onboarding checklist for new users (hide when editor is open) */}
-      {!activeProject && <OnboardingChecklist nodes={nodes} />}
+      {/* Onboarding checklist for new users (hide when editor is open, hide on mobile) */}
+      {!activeProject && (
+        <div className="hidden lg:block">
+          <OnboardingChecklist nodes={nodes} />
+        </div>
+      )}
 
-      {/* Recent assets quick-links */}
+      {/* Recent assets quick-links — hidden on mobile */}
       {recentAssets.length > 0 && (
-        <div className="flex items-center gap-3 border-b border-smoke px-4 py-3">
+        <div className="hidden lg:flex items-center gap-3 border-b border-smoke px-4 py-3">
           <span className="shrink-0 text-xs font-semibold text-cloud">Recent Assets</span>
           <div className="flex flex-1 items-center gap-3 overflow-x-auto">
             {recentAssets.map((asset) => {
