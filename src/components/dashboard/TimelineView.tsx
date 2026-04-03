@@ -130,9 +130,13 @@ export function TimelineView({
                 }
               }}
               onEnded={() => {
-                setPlaying(false);
-                // Auto-advance to next scene
-                goToNext();
+                const idx = project.scenes.findIndex((s) => s.id === selectedSceneId);
+                if (idx < project.scenes.length - 1) {
+                  goToNext();
+                } else {
+                  setPlaying(false);
+                  setCurrentTime(totalDuration);
+                }
               }}
             />
           ) : (
@@ -222,9 +226,12 @@ export function TimelineView({
             return (
               <button
                 key={scene.id}
-                onClick={(e) => {
-                  e.stopPropagation();
+                onClick={() => {
                   onSelectScene(scene.id);
+                  setCurrentTime(sceneStartTimes[i] ?? 0);
+                  if (videoRef.current) {
+                    videoRef.current.currentTime = 0;
+                  }
                 }}
                 className={`relative h-full overflow-hidden transition-all cursor-pointer ${
                   isSelected
@@ -238,7 +245,7 @@ export function TimelineView({
                     src={scene.videoUrl}
                     className="w-full h-full object-cover pointer-events-none"
                     muted
-                    preload="metadata"
+                    preload="none"
                   />
                 ) : (
                   <div className="w-full h-full bg-slate/40" />

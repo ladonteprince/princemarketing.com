@@ -326,9 +326,18 @@ export default function DashboardPage() {
     });
   }, []);
 
-  const handleUpdateVideoProject = useCallback((project: VideoProject) => {
-    setVideoProjects((prev) => new Map(prev).set(project.id, project));
-  }, []);
+  const handleUpdateVideoProject = useCallback((projectOrUpdater: VideoProject | ((prev: VideoProject) => VideoProject)) => {
+    setVideoProjects((prev) => {
+      if (typeof projectOrUpdater === 'function') {
+        if (!activeVideoProject) return prev;
+        const existing = prev.get(activeVideoProject);
+        if (!existing) return prev;
+        const updated = projectOrUpdater(existing);
+        return new Map(prev).set(activeVideoProject, updated);
+      }
+      return new Map(prev).set(projectOrUpdater.id, projectOrUpdater);
+    });
+  }, [activeVideoProject]);
 
   const activeProject = activeVideoProject
     ? videoProjects.get(activeVideoProject)

@@ -39,7 +39,7 @@ import { streamGeneration } from "@/lib/api";
 
 type VideoEditorProps = {
   project: VideoProject;
-  onUpdateProject: (project: VideoProject) => void;
+  onUpdateProject: (project: VideoProject | ((prev: VideoProject) => VideoProject)) => void;
   onClose?: () => void;
   initialDrawerOpen?: boolean;
 };
@@ -83,12 +83,21 @@ function SceneCard({
   const [editPrompt, setEditPrompt] = useState(scene.prompt);
   const isLoading = scene.status === "generating" || scene.status === "regenerating";
 
+  // Sync editPrompt when scene.prompt changes externally (e.g. ref tag insertion)
+  useEffect(() => {
+    if (!isEditingPrompt) {
+      setEditPrompt(scene.prompt);
+    }
+  }, [scene.prompt, isEditingPrompt]);
+
   // Auto-detect mode label from scene content
   const autoModeLabel = scene.sourceImageUrl
     ? "Image → Video"
     : scene.referenceImageIds.length > 0
       ? "Character"
-      : "Text → Video";
+      : scene.videoUrl && scene.versions.length === 0
+        ? "Imported"
+        : "Text → Video";
 
   return (
     <div
@@ -688,18 +697,18 @@ export function VideoEditor({
 
   const updateScene = useCallback(
     (sceneId: string, updates: Partial<VideoScene>) => {
-      onUpdateProject({
-        ...project,
-        scenes: project.scenes.map((s) =>
+      onUpdateProject((prev: VideoProject) => ({
+        ...prev,
+        scenes: prev.scenes.map((s) =>
           s.id === sceneId ? { ...s, ...updates } : s
         ),
-      });
+      }));
     },
-    [project, onUpdateProject]
+    [onUpdateProject]
   );
 
   function updateProject(updates: Partial<VideoProject>) {
-    onUpdateProject({ ...project, ...updates });
+    onUpdateProject((prev: VideoProject) => ({ ...prev, ...updates }));
   }
 
   /* ─ Scene API calls ─ */
@@ -852,9 +861,11 @@ export function VideoEditor({
 
   function handleUndoDelete() {
     if (!deletedScene) return;
-    const scenes = [...project.scenes];
-    scenes.splice(deletedScene.index, 0, deletedScene.scene);
-    updateProject({ scenes });
+    onUpdateProject((prev: VideoProject) => {
+      const scenes = [...prev.scenes];
+      scenes.splice(deletedScene.index, 0, deletedScene.scene);
+      return { ...prev, scenes };
+    });
     setDeletedScene(null);
   }
 
@@ -1094,10 +1105,48 @@ export function VideoEditor({
   /* ─ Reference image handlers ─ */
 
   const [pendingRefCategory, setPendingRefCategory] = useState<"character" | "prop" | "scene">("character");
+  const [showRefPicker, setShowRefPicker] = useState<{ category: "character" | "prop" | "scene"; show: boolean; assetsLoaded: boolean }>({ category: "character", show: false, assetsLoaded: false });
+  const [refPickerAssets, setRefPickerAssets] = useState<Array<{ id: string; type: string; url: string; prompt: string }>>([]);
+
+  // Fetch assets when ref picker opens with "From Assets"
+  useEffect(() => {
+    if (showRefPicker.show && showRefPicker.assetsLoaded && refPickerAssets.length === 0) {
+      fetch("/api/user/assets?limit=20")
+        .then((r) => r.json())
+        .then((data) => setRefPickerAssets(data.assets ?? []))
+        .catch(() => {});
+    }
+  }, [showRefPicker.show, showRefPicker.assetsLoaded]);
 
   function handleAddRefImage(category: "character" | "prop" | "scene") {
     setPendingRefCategory(category);
     refImageInputRef.current?.click();
+  }
+
+  function handleAddFromAssets(category: "character" | "prop" | "scene") {
+    setShowRefPicker({ category, show: true, assetsLoaded: true });
+    if (refPickerAssets.length === 0) {
+      fetch("/api/user/assets?limit=20")
+        .then((r) => r.json())
+        .then((data) => setRefPickerAssets(data.assets ?? []))
+        .catch(() => {});
+    }
+  }
+
+  function handlePickAsset(asset: { id: string; type: string; url: string; prompt: string }, category: "character" | "prop" | "scene") {
+    const proxyUrl = asset.url.startsWith("https://princemarketing.ai/")
+      ? `/api/proxy/image?url=${encodeURIComponent(asset.url)}`
+      : asset.url;
+    const newRef: ReferenceImage = {
+      id: crypto.randomUUID(),
+      url: proxyUrl,
+      label: "",
+      category,
+    };
+    updateProject({
+      referenceImages: [...(project.referenceImages ?? []), newRef],
+    });
+    setShowRefPicker({ category, show: false, assetsLoaded: false });
   }
 
   function handleRefImageFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1506,13 +1555,51 @@ export function VideoEditor({
               });
             })()}
             {refs.filter((r) => r.category === "character").length < 3 && (
-              <button
-                onClick={() => handleAddRefImage("character")}
-                className="w-20 h-20 rounded-xl border border-dashed border-smoke/60 flex flex-col items-center justify-center text-ash/40 hover:text-royal hover:border-royal/40 hover:bg-royal/[0.02] transition-all duration-200 cursor-pointer"
-              >
-                <Plus size={16} />
-                <span className="text-[9px] mt-1 font-medium">+ Add</span>
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setShowRefPicker({ category: "character", show: !showRefPicker.show || showRefPicker.category !== "character", assetsLoaded: false })}
+                  className="w-20 h-20 rounded-xl border border-dashed border-smoke/60 flex flex-col items-center justify-center text-ash/40 hover:text-royal hover:border-royal/40 hover:bg-royal/[0.02] transition-all duration-200 cursor-pointer"
+                >
+                  <Plus size={16} />
+                  <span className="text-[9px] mt-1 font-medium">+ Add</span>
+                </button>
+                {showRefPicker.show && showRefPicker.category === "character" && (
+                  <div className="absolute bottom-full left-0 z-30 mb-1 w-48 rounded-xl border border-smoke bg-graphite p-2 shadow-xl">
+                    <button
+                      onClick={() => { handleAddRefImage("character"); setShowRefPicker({ category: "character", show: false, assetsLoaded: false }); }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-ash hover:text-cloud hover:bg-slate transition-colors cursor-pointer"
+                    >
+                      <Upload size={12} /> Upload File
+                    </button>
+                    <button
+                      onClick={() => handleAddFromAssets("character")}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-ash hover:text-cloud hover:bg-slate transition-colors cursor-pointer"
+                    >
+                      <FolderOpen size={12} /> From Assets
+                    </button>
+                    {showRefPicker.assetsLoaded && (
+                      <div className="mt-2 grid grid-cols-3 gap-1 max-h-32 overflow-y-auto border-t border-smoke/40 pt-2">
+                        {refPickerAssets.filter((a) => a.type === "image").length === 0 && (
+                          <span className="col-span-3 text-[10px] text-ash/50 text-center py-2">No image assets</span>
+                        )}
+                        {refPickerAssets.filter((a) => a.type === "image").map((asset) => (
+                          <button
+                            key={asset.id}
+                            onClick={() => handlePickAsset(asset, "character")}
+                            className="aspect-square rounded-md overflow-hidden border border-smoke/30 hover:border-royal/40 cursor-pointer"
+                          >
+                            <img
+                              src={asset.url.startsWith("https://princemarketing.ai/") ? `/api/proxy/image?url=${encodeURIComponent(asset.url)}` : asset.url}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -1573,13 +1660,51 @@ export function VideoEditor({
               });
             })()}
             {refs.filter((r) => r.category === "prop").length < 3 && (
-              <button
-                onClick={() => handleAddRefImage("prop")}
-                className="w-20 h-20 rounded-xl border border-dashed border-smoke/60 flex flex-col items-center justify-center text-ash/40 hover:text-royal hover:border-royal/40 hover:bg-royal/[0.02] transition-all duration-200 cursor-pointer"
-              >
-                <Plus size={16} />
-                <span className="text-[9px] mt-1 font-medium">+ Add</span>
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setShowRefPicker({ category: "prop", show: !showRefPicker.show || showRefPicker.category !== "prop", assetsLoaded: false })}
+                  className="w-20 h-20 rounded-xl border border-dashed border-smoke/60 flex flex-col items-center justify-center text-ash/40 hover:text-royal hover:border-royal/40 hover:bg-royal/[0.02] transition-all duration-200 cursor-pointer"
+                >
+                  <Plus size={16} />
+                  <span className="text-[9px] mt-1 font-medium">+ Add</span>
+                </button>
+                {showRefPicker.show && showRefPicker.category === "prop" && (
+                  <div className="absolute bottom-full left-0 z-30 mb-1 w-48 rounded-xl border border-smoke bg-graphite p-2 shadow-xl">
+                    <button
+                      onClick={() => { handleAddRefImage("prop"); setShowRefPicker({ category: "prop", show: false, assetsLoaded: false }); }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-ash hover:text-cloud hover:bg-slate transition-colors cursor-pointer"
+                    >
+                      <Upload size={12} /> Upload File
+                    </button>
+                    <button
+                      onClick={() => handleAddFromAssets("prop")}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-ash hover:text-cloud hover:bg-slate transition-colors cursor-pointer"
+                    >
+                      <FolderOpen size={12} /> From Assets
+                    </button>
+                    {showRefPicker.assetsLoaded && (
+                      <div className="mt-2 grid grid-cols-3 gap-1 max-h-32 overflow-y-auto border-t border-smoke/40 pt-2">
+                        {refPickerAssets.filter((a) => a.type === "image").length === 0 && (
+                          <span className="col-span-3 text-[10px] text-ash/50 text-center py-2">No image assets</span>
+                        )}
+                        {refPickerAssets.filter((a) => a.type === "image").map((asset) => (
+                          <button
+                            key={asset.id}
+                            onClick={() => handlePickAsset(asset, "prop")}
+                            className="aspect-square rounded-md overflow-hidden border border-smoke/30 hover:border-royal/40 cursor-pointer"
+                          >
+                            <img
+                              src={asset.url.startsWith("https://princemarketing.ai/") ? `/api/proxy/image?url=${encodeURIComponent(asset.url)}` : asset.url}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -1640,13 +1765,51 @@ export function VideoEditor({
               });
             })()}
             {refs.filter((r) => r.category === "scene").length < 3 && (
-              <button
-                onClick={() => handleAddRefImage("scene")}
-                className="w-20 h-20 rounded-xl border border-dashed border-smoke/60 flex flex-col items-center justify-center text-ash/40 hover:text-royal hover:border-royal/40 hover:bg-royal/[0.02] transition-all duration-200 cursor-pointer"
-              >
-                <Plus size={16} />
-                <span className="text-[9px] mt-1 font-medium">+ Add</span>
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setShowRefPicker({ category: "scene", show: !showRefPicker.show || showRefPicker.category !== "scene", assetsLoaded: false })}
+                  className="w-20 h-20 rounded-xl border border-dashed border-smoke/60 flex flex-col items-center justify-center text-ash/40 hover:text-royal hover:border-royal/40 hover:bg-royal/[0.02] transition-all duration-200 cursor-pointer"
+                >
+                  <Plus size={16} />
+                  <span className="text-[9px] mt-1 font-medium">+ Add</span>
+                </button>
+                {showRefPicker.show && showRefPicker.category === "scene" && (
+                  <div className="absolute bottom-full left-0 z-30 mb-1 w-48 rounded-xl border border-smoke bg-graphite p-2 shadow-xl">
+                    <button
+                      onClick={() => { handleAddRefImage("scene"); setShowRefPicker({ category: "scene", show: false, assetsLoaded: false }); }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-ash hover:text-cloud hover:bg-slate transition-colors cursor-pointer"
+                    >
+                      <Upload size={12} /> Upload File
+                    </button>
+                    <button
+                      onClick={() => handleAddFromAssets("scene")}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-ash hover:text-cloud hover:bg-slate transition-colors cursor-pointer"
+                    >
+                      <FolderOpen size={12} /> From Assets
+                    </button>
+                    {showRefPicker.assetsLoaded && (
+                      <div className="mt-2 grid grid-cols-3 gap-1 max-h-32 overflow-y-auto border-t border-smoke/40 pt-2">
+                        {refPickerAssets.filter((a) => a.type === "image").length === 0 && (
+                          <span className="col-span-3 text-[10px] text-ash/50 text-center py-2">No image assets</span>
+                        )}
+                        {refPickerAssets.filter((a) => a.type === "image").map((asset) => (
+                          <button
+                            key={asset.id}
+                            onClick={() => handlePickAsset(asset, "scene")}
+                            className="aspect-square rounded-md overflow-hidden border border-smoke/30 hover:border-royal/40 cursor-pointer"
+                          >
+                            <img
+                              src={asset.url.startsWith("https://princemarketing.ai/") ? `/api/proxy/image?url=${encodeURIComponent(asset.url)}` : asset.url}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -1673,7 +1836,7 @@ export function VideoEditor({
           };
           // Replace empty Scene 1 instead of appending after it
           const firstScene = project.scenes[0];
-          const isFirstEmpty = firstScene && !firstScene.prompt && !firstScene.videoUrl && !firstScene.sourceImageUrl;
+          const isFirstEmpty = firstScene && !firstScene.prompt && !firstScene.videoUrl && !firstScene.sourceImageUrl && firstScene.status !== "generating";
           if (isFirstEmpty && project.scenes.length === 1) {
             updateProject({ scenes: [newScene] });
           } else {

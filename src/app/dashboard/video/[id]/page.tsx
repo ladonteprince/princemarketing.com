@@ -66,6 +66,13 @@ export default function VideoEditorPage() {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  // Reset initialDrawerOpen after VideoEditor has consumed it
+  useEffect(() => {
+    if (openDrawer && project.scenes.length > 0) {
+      setOpenDrawer(false);
+    }
+  }, [openDrawer, project.scenes.length]);
+
   // TODO: Load project from database if it exists
   // useEffect(() => {
   //   fetch(`/api/video/project/${projectId}`)
@@ -74,7 +81,7 @@ export default function VideoEditorPage() {
   //     .catch(() => {});
   // }, [projectId]);
 
-  function handleUpdateProject(updated: VideoProject) {
+  function handleUpdateProject(updated: VideoProject | ((prev: VideoProject) => VideoProject)) {
     setProject(updated);
     // TODO: Persist to database
   }
