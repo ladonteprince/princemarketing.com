@@ -6,7 +6,7 @@ import { Sidebar } from "./Sidebar";
 import { ChatPanel } from "@/components/dashboard/ChatPanel";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
-import { Menu, MessageSquare } from "lucide-react";
+import { Menu } from "lucide-react";
 import type { CanvasAction, ContentNode } from "@/types/canvas";
 
 type ShellProps = {
@@ -50,9 +50,7 @@ export function Shell({ children }: ShellProps) {
       </div>
 
       {/* Main content area */}
-      <main className={`min-w-0 flex-1 md:ml-[var(--sidebar-width)] transition-[margin] duration-[var(--transition-page)] ${
-        chatOpen && !isWorkspace ? "lg:mr-[360px]" : ""
-      }`}>
+      <main className="min-w-0 flex-1 md:ml-[var(--sidebar-width)] transition-[margin] duration-[var(--transition-page)]">
         {/* Mobile top bar with hamburger */}
         <div className="flex h-14 items-center border-b border-smoke px-4 md:hidden">
           <button
@@ -81,36 +79,23 @@ export function Shell({ children }: ShellProps) {
         {children}
       </main>
 
-      {/* Global Chat Panel — available on all pages except Workspace (which has its own) */}
+      {/* Global Chat Panel — collapsible right panel on all pages except Workspace */}
       {!isWorkspace && (
-        <>
-          {/* Chat toggle button */}
-          {!chatOpen && (
-            <button
-              onClick={() => setChatOpen(true)}
-              className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-royal text-white shadow-lg shadow-royal/30 hover:bg-royal/80 transition-all cursor-pointer hover:scale-105"
-              title="Open AI Strategist"
-            >
-              <MessageSquare size={20} strokeWidth={1.5} />
-            </button>
-          )}
-
-          {/* Slide-in chat panel */}
-          <div
-            className={`fixed top-0 right-0 z-30 h-full w-[360px] border-l border-smoke bg-graphite transition-transform duration-300 ${
-              chatOpen ? "translate-x-0" : "translate-x-full"
-            }`}
-          >
-            <ErrorBoundary>
-              <ChatPanel
-                collapsed={false}
-                onToggle={() => setChatOpen(false)}
-                onCanvasAction={handleCanvasAction}
-                nodes={[]}
-              />
-            </ErrorBoundary>
-          </div>
-        </>
+        <div
+          className={`
+            hidden lg:block shrink-0 transition-[width] duration-300 ease-in-out
+            ${chatOpen ? "w-[30%] min-w-[320px] max-w-[480px]" : "w-12"}
+          `}
+        >
+          <ErrorBoundary>
+            <ChatPanel
+              collapsed={!chatOpen}
+              onToggle={() => setChatOpen((prev) => !prev)}
+              onCanvasAction={handleCanvasAction}
+              nodes={[]}
+            />
+          </ErrorBoundary>
+        </div>
       )}
     </div>
   );
