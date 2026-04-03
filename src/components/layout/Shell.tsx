@@ -1,17 +1,32 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, useCallback, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { Sidebar } from "./Sidebar";
+import { ChatPanel } from "@/components/dashboard/ChatPanel";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
-import { Menu } from "lucide-react";
+import { Menu, MessageSquare } from "lucide-react";
+import type { CanvasAction, ContentNode } from "@/types/canvas";
 
 type ShellProps = {
   children: ReactNode;
 };
 
-// WHY: Shell provides the sidebar + main content area layout for the dashboard.
+// WHY: Shell provides the sidebar + main content area + global chat panel for the dashboard.
 export function Shell({ children }: ShellProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const pathname = usePathname();
+
+  // On the Workspace page, ChatPanel is rendered inline (not in Shell)
+  const isWorkspace = pathname === "/dashboard";
+
+  // Stub handler — the global chat doesn't control the canvas (only Workspace does)
+  const handleCanvasAction = useCallback((action: CanvasAction) => {
+    // For non-workspace pages, canvas actions are no-ops
+    // The chat can still generate content, schedule posts, get analytics, etc.
+  }, []);
 
   return (
     <div className="flex min-h-screen">
@@ -34,8 +49,10 @@ export function Shell({ children }: ShellProps) {
         <Sidebar onCloseMobile={() => setMobileSidebarOpen(false)} />
       </div>
 
-      {/* Main content area: no left margin on mobile, sidebar offset on md+ */}
-      <main className="min-w-0 flex-1 md:ml-[var(--sidebar-width)] transition-[margin] duration-[var(--transition-page)]">
+      {/* Main content area */}
+      <main className={`min-w-0 flex-1 md:ml-[var(--sidebar-width)] transition-[margin] duration-[var(--transition-page)] ${
+        chatOpen && !isWorkspace ? "lg:mr-[360px]" : ""
+      }`}>
         {/* Mobile top bar with hamburger */}
         <div className="flex h-14 items-center border-b border-smoke px-4 md:hidden">
           <button
@@ -64,7 +81,37 @@ export function Shell({ children }: ShellProps) {
         {children}
       </main>
 
-      {/* Chat is available via the Workspace page (/dashboard) — no floating widget needed */}
+      {/* Global Chat Panel — available on all pages except Workspace (which has its own) */}
+      {!isWorkspace && (
+        <>
+          {/* Chat toggle button */}
+          {!chatOpen && (
+            <button
+              onClick={() => setChatOpen(true)}
+              className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-royal text-white shadow-lg shadow-royal/30 hover:bg-royal/80 transition-all cursor-pointer hover:scale-105"
+              title="Open AI Strategist"
+            >
+              <MessageSquare size={20} strokeWidth={1.5} />
+            </button>
+          )}
+
+          {/* Slide-in chat panel */}
+          <div
+            className={`fixed top-0 right-0 z-30 h-full w-[360px] border-l border-smoke bg-graphite transition-transform duration-300 ${
+              chatOpen ? "translate-x-0" : "translate-x-full"
+            }`}
+          >
+            <ErrorBoundary>
+              <ChatPanel
+                collapsed={false}
+                onToggle={() => setChatOpen(false)}
+                onCanvasAction={handleCanvasAction}
+                nodes={[]}
+              />
+            </ErrorBoundary>
+          </div>
+        </>
+      )}
     </div>
   );
 }

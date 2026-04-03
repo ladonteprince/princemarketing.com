@@ -52,12 +52,13 @@ async function publishToFacebook({ content, mediaUrl, mediaUrls, mediaType, acce
       return { success: false, error: "No Facebook pages found. Connect a page first." };
     }
 
-    // Prefer "LaDonte Prince" page, then any page with "Prince" in the name, then first page
-    const page = pagesData.data.find((p: any) => p.name === "LaDonte Prince")
+    // Use explicitly provided pageId, or prefer "LaDonte Prince", then any "Prince", then first
+    const page = (pageId ? pagesData.data.find((p: any) => p.id === pageId) : null)
+      ?? pagesData.data.find((p: any) => p.name === "LaDonte Prince")
       ?? pagesData.data.find((p: any) => p.name?.toLowerCase().includes("prince"))
       ?? pagesData.data[0];
     const pageToken = page.access_token;
-    const pageId = page.id;
+    const resolvedPageId = page.id;
 
     const schedulingParams = scheduled
       ? { published: false, scheduled_publish_time: scheduled }
@@ -65,7 +66,7 @@ async function publishToFacebook({ content, mediaUrl, mediaUrls, mediaType, acce
 
     // Photo post
     if (mediaType === "image" && mediaUrl) {
-      const res = await fetch(`https://graph.facebook.com/v19.0/${pageId}/photos`, {
+      const res = await fetch(`https://graph.facebook.com/v19.0/${resolvedPageId}/photos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -82,7 +83,7 @@ async function publishToFacebook({ content, mediaUrl, mediaUrls, mediaType, acce
 
     // Video post
     if (mediaType === "video" && mediaUrl) {
-      const res = await fetch(`https://graph.facebook.com/v19.0/${pageId}/videos`, {
+      const res = await fetch(`https://graph.facebook.com/v19.0/${resolvedPageId}/videos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -102,7 +103,7 @@ async function publishToFacebook({ content, mediaUrl, mediaUrls, mediaType, acce
     if (mediaType === "carousel" && mediaUrls && mediaUrls.length > 1) {
       const photoIds: string[] = [];
       for (const url of mediaUrls) {
-        const photoRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/photos`, {
+        const photoRes = await fetch(`https://graph.facebook.com/v19.0/${resolvedPageId}/photos`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url, published: false, access_token: pageToken }),
@@ -118,7 +119,7 @@ async function publishToFacebook({ content, mediaUrl, mediaUrls, mediaType, acce
         return acc;
       }, {} as Record<string, string>);
 
-      const postRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/feed`, {
+      const postRes = await fetch(`https://graph.facebook.com/v19.0/${resolvedPageId}/feed`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -135,7 +136,7 @@ async function publishToFacebook({ content, mediaUrl, mediaUrls, mediaType, acce
 
     // Default: text post
     const postRes = await fetch(
-      `https://graph.facebook.com/v19.0/${pageId}/feed`,
+      `https://graph.facebook.com/v19.0/${resolvedPageId}/feed`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

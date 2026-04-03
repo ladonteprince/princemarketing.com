@@ -414,15 +414,23 @@ function SettingsPageContent() {
                           className="w-full text-xs bg-slate border border-smoke rounded px-2 py-1.5 text-ash focus:border-royal focus:outline-none"
                           defaultValue={accountData.selectedAccountId ?? ""}
                           onChange={(e) => {
-                            // WHY: Update the selected account so publishing targets the right page/channel.
-                            // For now, store in local state. Future: persist via API call.
+                            const selectedId = e.target.value;
+                            // Update local state immediately
                             setPlatformAccounts((prev) => ({
                               ...prev,
                               [platform.type]: {
                                 ...prev[platform.type],
-                                selectedAccountId: e.target.value,
+                                selectedAccountId: selectedId,
                               },
                             }));
+                            // Persist to localStorage so it survives page reloads
+                            localStorage.setItem(`pm-active-page-${platform.type}`, selectedId);
+                            // Persist to server via API
+                            fetch(`/api/user/settings/active-page`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ platformType: platform.type, pageId: selectedId }),
+                            }).catch(() => {});
                           }}
                         >
                           {accountData.accounts.map((acct) => (
