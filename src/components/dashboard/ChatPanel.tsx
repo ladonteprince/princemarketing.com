@@ -19,6 +19,8 @@ import {
   Send as SendIcon,
   BarChart3,
   Trash2,
+  ListChecks,
+  Rocket,
 } from "lucide-react";
 import type { ContentNode, CanvasAction } from "@/types/canvas";
 
@@ -961,19 +963,19 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
 
       {/* Mode toggle */}
       <div className="flex items-center gap-2 px-4 py-1.5 border-t border-smoke/30">
-        <span className="text-[10px] text-ash">Mode:</span>
         <button
           onClick={() => setCreationMode(creationMode === "plan" ? "auto" : "plan")}
-          className={`flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors cursor-pointer ${
+          className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-medium transition-all cursor-pointer ${
             creationMode === "plan"
-              ? "bg-royal/15 text-royal"
-              : "bg-emerald-500/15 text-emerald-400"
+              ? "bg-royal/10 text-royal border border-royal/20"
+              : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
           }`}
         >
-          {creationMode === "plan" ? "\u23F8 Plan" : "\u26A1 Auto"}
+          {creationMode === "plan" ? <ListChecks size={12} strokeWidth={1.5} /> : <Rocket size={12} strokeWidth={1.5} />}
+          {creationMode === "plan" ? "Plan" : "Auto"}
         </button>
-        <span className="text-[9px] text-ash/50">
-          {creationMode === "plan" ? "Review each scene" : "Generate all at once"}
+        <span className="text-[9px] text-ash/40">
+          {creationMode === "plan" ? "Scene-by-scene" : "Hands-off"}
         </span>
       </div>
 
