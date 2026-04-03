@@ -82,6 +82,7 @@ function SceneCard({
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editPrompt, setEditPrompt] = useState(scene.prompt);
   const isLoading = scene.status === "generating" || scene.status === "regenerating";
+  const isDraft = scene.status === "draft";
 
   // Sync editPrompt when scene.prompt changes externally (e.g. ref tag insertion)
   useEffect(() => {
@@ -123,10 +124,10 @@ function SceneCard({
             Scene {index + 1}
           </span>
           <Badge
-            variant={scene.status === "ready" ? "mint" : "amber"}
+            variant={scene.status === "ready" ? "mint" : scene.status === "draft" ? "default" : "amber"}
             className="text-[9px]"
           >
-            {scene.status}
+            {scene.status === "draft" ? "queued" : scene.status}
           </Badge>
         </div>
 

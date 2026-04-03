@@ -140,7 +140,7 @@ export default function DashboardPage() {
               duration: action.scene.duration ?? 5,
               trimStart: 0,
               trimEnd: action.scene.duration ?? 5,
-              status: "generating",
+              status: "draft",
               mode: (action.scene.mode as VideoScene["mode"]) ?? "t2v",
               referenceImageIds: [],
               versions: [],

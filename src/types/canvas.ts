@@ -16,7 +16,7 @@ export interface ContentNode {
   videoProjectId?: string; // links to a VideoProject if type === "video"
 }
 
-export type VideoSceneStatus = "generating" | "ready" | "regenerating";
+export type VideoSceneStatus = "draft" | "generating" | "ready" | "regenerating";
 
 export type VideoSceneMode = "t2v" | "i2v" | "character" | "extend";
 

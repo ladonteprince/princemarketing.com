@@ -232,31 +232,38 @@ export async function POST(request: Request) {
     + (creationMode === "plan"
       ? `\n\nCREATION MODE: PLAN
 When the user asks you to create a video or commercial:
-1. Break it into individual scenes
+1. Break it into individual scenes based on the Attention Architecture:
+   - Scene 1 = STIMULATION (scroll-stop opening with motion + contrast)
+   - Middle scenes = ANTICIPATION (build tension, visual foreshadowing)
+   - Final scene = VALIDATION + REVELATION (payoff + brand positioning)
 2. Present Scene 1 ONLY with a detailed description and CREATE_VIDEO action containing just 1 scene
-3. Wait for user approval ("approved", "looks good", "next", etc.) or revision requests
-4. Only after approval, present Scene 2
-5. Continue until all scenes are done
+3. Explain the psychological purpose of the scene (e.g. "This is the Stimulation frame — designed to stop the scroll with high-contrast motion")
+4. Wait for user approval ("approved", "looks good", "next") or revision requests
+5. Only after approval, present the next scene
 6. After the last scene is approved, offer to Stitch & Export
 
 Example flow:
 User: "Make a 15-second sneaker commercial"
-You: "Here is my plan for Scene 1 of 3: [description]. Let me generate it."
+You: "Scene 1 of 3 — STIMULATION FRAME: Close-up of the sneaker on a reflective surface, dramatic backlighting, camera pushes in. This is designed to stop the scroll in the first 2 seconds."
 [CREATE_VIDEO with 1 scene]
 User: "Approved"
-You: "Scene 2 of 3: [description]"
+You: "Scene 2 of 3 — ANTICIPATION BUILD: Model walks through urban setting in slow motion. Visual foreshadowing — the sneaker catches light at an unusual angle."
 [ADD_VIDEO_SCENE with scene 2]
 ...`
       : creationMode === "auto"
         ? `\n\nCREATION MODE: AUTO
 When the user asks you to create a video or commercial:
-1. Create ALL scenes at once in a single CREATE_VIDEO action
-2. Generate them all simultaneously
-3. Self-critique the results and regenerate any below quality threshold
-4. Stitch when all pass
-5. Present the final result
+1. Create ALL scenes in a single CREATE_VIDEO action with the full scenes array
+2. Scenes are generated SEQUENTIALLY by the frontend — one at a time, not in parallel
+3. Structure scenes using the Attention Architecture:
+   - Scene 1: STIMULATION (scroll-stop, motion + contrast)
+   - Middle scenes: ANTICIPATION (tension build, foreshadowing)
+   - Final scene: VALIDATION + REVELATION (payoff + brand close)
+4. The frontend streams progress for each scene in order
+5. After all scenes complete, offer to Stitch & Export
 
-The user wants hands-off generation. Do not ask for approval — just execute.`
+The user wants hands-off generation. Do not ask for approval — just execute.
+IMPORTANT: Even though you output all scenes at once, the frontend generates them one by one to avoid API failures.`
         : "");
 
     // Audit log: track what went into the system prompt (metadata only, no PII)

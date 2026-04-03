@@ -169,9 +169,16 @@ async function executeAction(
         // Always open the video editor for the new project
         onCanvasAction({ type: "open-video-editor", videoProjectId });
 
-        // Dispatch add-video-scene actions so scenes appear in the Video Editor immediately
-        if (action.scenes && action.scenes.length > 0) {
-          for (const scene of action.scenes) {
+        // WHY: Scenes are created with status "draft" (not "generating") and then
+        // generated SEQUENTIALLY — one at a time. This prevents Seedance API
+        // overload from parallel requests (which break) and aligns with the
+        // Attention Architecture where each scene has a specific psychological
+        // role (Stimulation → Anticipation → Validation) that benefits from
+        // sequential generation + review.
+        const scenes = action.scenes ?? [];
+        if (scenes.length > 0) {
+          // Create all scene cards as "draft" first so the user sees the plan
+          for (const scene of scenes) {
             onCanvasAction({
               type: "add-video-scene",
               videoProjectId,
@@ -182,82 +189,100 @@ async function executeAction(
               },
             });
           }
-        }
 
-        // Trigger video generation and stream progress via SSE
-        if (action.prompt) {
-          // Detect video generation mode from action data
-          const videoMode = action.mode
-            ?? (action.sourceImage ? 'i2v' : undefined)
-            ?? (action.sourceVideo ? 'extend' : undefined)
-            ?? 't2v';
+          // Generate scenes sequentially — scene 1, wait, scene 2, wait, etc.
+          const { streamGeneration } = await import("@/lib/api");
+          let completedCount = 0;
 
-          const videoPayload: Record<string, unknown> = {
-            prompt: action.prompt,
-            duration: action.scenes?.[0]?.duration ?? 5,
-            aspectRatio: "16:9",
-            mode: videoMode,
-          };
-          if (action.sourceImage) videoPayload.sourceImage = action.sourceImage;
-          if (action.sourceVideo) videoPayload.sourceVideo = action.sourceVideo;
+          for (let i = 0; i < scenes.length; i++) {
+            const scene = scenes[i];
+            const sceneNum = i + 1;
+            const totalScenes = scenes.length;
 
-          const res = await fetch("/api/generate/video", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(videoPayload),
-          });
-          const data = await res.json();
-
-          if (res.ok && data.generationId) {
-            // Open SSE stream for real-time progress
-            const { streamGeneration } = await import("@/lib/api");
-
-            return new Promise((resolve) => {
-              const cancel = streamGeneration(data.generationId, {
-                onProgress: (event) => {
-                  // Update via the statusCallback if provided
-                  if (statusCallback) {
-                    statusCallback({
-                      progress: event.data.progress,
-                      stage: event.data.stage,
-                      detail: event.data.message,
-                    });
-                  }
-                },
-                onCompleted: (event) => {
-                  resolve({
-                    success: true,
-                    detail: `Video ready — scored ${event.data.score?.toFixed(1) ?? "?"}/10`,
-                    nodeRef: id,
-                  });
-                },
-                onFailed: (event) => {
-                  resolve({
-                    success: false,
-                    detail: event.data.error ?? "Video generation failed",
-                  });
-                },
-                onError: (error) => {
-                  resolve({
-                    success: false,
-                    detail: error.message,
-                  });
-                },
+            if (statusCallback) {
+              statusCallback({
+                progress: Math.round((i / totalScenes) * 100),
+                stage: `Scene ${sceneNum}/${totalScenes}`,
+                detail: `Generating scene ${sceneNum}: ${scene.prompt.slice(0, 60)}...`,
               });
+            }
 
-              // Safety timeout: cancel SSE after 30 minutes
-              setTimeout(() => {
-                cancel();
-                resolve({
-                  success: false,
-                  detail: "Video generation timed out",
-                });
-              }, 30 * 60 * 1000);
+            // Mark this scene as generating
+            onCanvasAction({
+              type: "generate-video-scene",
+              videoProjectId,
+              sceneIndex: i,
             });
+
+            const videoMode = action.mode
+              ?? (action.sourceImage ? "i2v" : undefined)
+              ?? (action.sourceVideo ? "extend" : undefined)
+              ?? "t2v";
+
+            const videoPayload: Record<string, unknown> = {
+              prompt: scene.prompt,
+              duration: scene.duration ?? 5,
+              aspectRatio: "16:9",
+              mode: videoMode,
+            };
+            if (action.sourceImage) videoPayload.sourceImage = action.sourceImage;
+            if (action.sourceVideo) videoPayload.sourceVideo = action.sourceVideo;
+
+            try {
+              const res = await fetch("/api/generate/video", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(videoPayload),
+              });
+              const data = await res.json();
+
+              if (res.ok && data.generationId) {
+                // Wait for this scene to complete before starting the next
+                await new Promise<void>((resolve) => {
+                  const cancel = streamGeneration(data.generationId, {
+                    onProgress: (event) => {
+                      if (statusCallback) {
+                        const sceneProgress = event.data.progress ?? 0;
+                        const overallProgress = Math.round(((i + sceneProgress / 100) / totalScenes) * 100);
+                        statusCallback({
+                          progress: overallProgress,
+                          stage: `Scene ${sceneNum}/${totalScenes}`,
+                          detail: event.data.message ?? `Generating scene ${sceneNum}...`,
+                        });
+                      }
+                    },
+                    onCompleted: () => {
+                      completedCount++;
+                      resolve();
+                    },
+                    onFailed: () => {
+                      resolve(); // Continue to next scene even if one fails
+                    },
+                    onError: () => {
+                      resolve();
+                    },
+                  });
+
+                  // Per-scene timeout: 10 minutes
+                  setTimeout(() => {
+                    cancel();
+                    resolve();
+                  }, 10 * 60 * 1000);
+                });
+              }
+            } catch {
+              // Scene generation failed — continue to next scene
+            }
           }
+
+          return {
+            success: completedCount > 0,
+            detail: `${completedCount}/${scenes.length} scenes generated sequentially`,
+            nodeRef: id,
+          };
         }
 
-        return { success: true, detail: `Video project created with ${action.scenes?.length ?? 0} scenes`, nodeRef: id };
+        return { success: true, detail: "Video project created", nodeRef: id };
       } catch (err) {
         return { success: false, detail: err instanceof Error ? err.message : "Failed" };
       }
