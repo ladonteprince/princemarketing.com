@@ -32,6 +32,7 @@ import type {
   VideoSceneMode,
   ReferenceImage,
 } from "@/types/canvas";
+import { TimelineView } from "./TimelineView";
 
 /* ─── Props ─────────────────────────────────────────────────────────── */
 
@@ -1356,6 +1357,15 @@ export function VideoEditor({
           </>
         )}
       </div>
+
+      {/* ── Filmstrip Timeline View ──────────────────────────── */}
+      {project.scenes.length > 0 && project.scenes.some((s) => s.videoUrl) && (
+        <TimelineView
+          project={project}
+          selectedSceneId={selectedSceneId}
+          onSelectScene={setSelectedSceneId}
+        />
+      )}
 
       {/* ── Audio Track ────────────────────────────────────────── */}
       <div className="border-t border-smoke/60 px-5 py-4">
