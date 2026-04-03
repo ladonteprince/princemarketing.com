@@ -155,6 +155,16 @@ const GetAdsAnalyticsAction = z.object({
   until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
+// --- Attention Architecture Scoring Action ---
+// WHY: The AI Strategist can score any content against the Attention Architecture
+// framework — 6 Storylocks + 6 Dopamine Ladder levels — before publishing.
+// This runs server-side so the scoring prompt stays private.
+const ScoreContentAction = z.object({
+  action: z.literal("SCORE_CONTENT"),
+  content: z.string().max(20000),
+  format: z.enum(["short-form", "long-form", "ad", "caption", "email", "landing-page"]).optional(),
+});
+
 // --- Memory Actions ---
 // WHY: The AI saves memories about the user's brand, preferences, and past performance.
 // Memories persist across sessions via localStorage and are injected into the system prompt.
@@ -188,6 +198,7 @@ export const ActionBlockSchema = z.discriminatedUnion("action", [
   AudienceInsightAction,
   DistributeAction,
   GetAdsAnalyticsAction,
+  ScoreContentAction,
   GenerateVideoSceneAction,
   ExtendVideoSceneAction,
   StitchVideoAction,

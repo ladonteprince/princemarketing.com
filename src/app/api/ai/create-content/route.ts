@@ -469,6 +469,58 @@ The user wants hands-off generation. Do not ask for approval — just execute.`
             break;
           }
 
+          case "SCORE_CONTENT": {
+            // WHY: Score content against the Attention Architecture framework.
+            // Uses Claude to evaluate 6 Storylocks + Dopamine Ladder coverage.
+            // Returns per-dimension scores and an aggregate Attention Score.
+            const contentToScore = String(action.content ?? "");
+            const contentFormat = String(action.format ?? "short-form");
+
+            const scoreResponse = await claude.messages.create({
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 1024,
+              system: `You are the Attention Architecture Scoring Engine. Score the following content against these dimensions. Return ONLY valid JSON.
+
+STORYLOCK SCORES (0-10 each):
+1. term_branding: Does it coin/use memorable named concepts?
+2. embedded_truths: Uses presuppositional language (when/once) vs conditional (if/maybe)?
+3. thought_narration: Anticipates and addresses viewer objections/thoughts?
+4. negative_frames: Uses loss aversion / threat framing for hooks?
+5. loop_openers: Includes attention-resetting transitions? (every 20-30s short, 60-90s long)
+6. contrast_words: Uses contrastive markers (but, actually, turns out) at key moments?
+
+DOPAMINE LADDER COVERAGE (true/false each):
+1. stimulation: Has a scroll-stopping opening with motion/contrast cues?
+2. captivation: Opens an information gap / curiosity loop?
+3. anticipation: Builds prediction without premature resolution?
+4. validation: Delivers a non-obvious payoff that closes the loop?
+5. loop_reset: Opens a new loop after validation?
+6. revelation_setup: Positions content as part of ongoing value system?
+
+FORMAT: ${contentFormat}
+
+Return JSON: {"storylocks":{"term_branding":N,"embedded_truths":N,"thought_narration":N,"negative_frames":N,"loop_openers":N,"contrast_words":N},"dopamine_ladder":{"stimulation":bool,"captivation":bool,"anticipation":bool,"validation":bool,"loop_reset":bool,"revelation_setup":bool},"attention_score":N,"weaknesses":["..."],"suggestions":["..."]}`,
+              messages: [{ role: "user", content: contentToScore }],
+            });
+
+            const scoreText = scoreResponse.content
+              .filter((b) => b.type === "text")
+              .map((b) => b.text)
+              .join("");
+
+            try {
+              const jsonMatch = scoreText.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                agentResults.contentScore = JSON.parse(jsonMatch[0]);
+              } else {
+                agentResults.contentScore = { raw: scoreText };
+              }
+            } catch {
+              agentResults.contentScore = { raw: scoreText };
+            }
+            break;
+          }
+
           case "GENERATE_VARIANTS": {
             const prompt = String(action.prompt ?? message);
             const platform = String(action.platform ?? "instagram");
