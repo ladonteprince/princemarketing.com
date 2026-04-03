@@ -247,6 +247,7 @@ export default function DashboardPage() {
               id: crypto.randomUUID(),
               url: action.url,
               label: action.label,
+              category: "character" as const,
             };
             next.set(action.videoProjectId, {
               ...project,
