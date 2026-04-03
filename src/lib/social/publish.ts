@@ -29,7 +29,10 @@ async function publishToFacebook({ content, accessToken }: PublishParams): Promi
       return { success: false, error: "No Facebook pages found. Connect a page first." };
     }
 
-    const page = pagesData.data[0];
+    // Prefer "LaDonte Prince" page, then any page with "Prince" in the name, then first page
+    const page = pagesData.data.find((p: any) => p.name === "LaDonte Prince")
+      ?? pagesData.data.find((p: any) => p.name?.toLowerCase().includes("prince"))
+      ?? pagesData.data[0];
     const pageToken = page.access_token;
     const pageId = page.id;
 
