@@ -23,7 +23,6 @@ import {
   Trash2,
   GripVertical,
   Sparkles,
-  ChevronRight,
   FolderOpen,
   Download,
 } from "lucide-react";
@@ -45,12 +44,7 @@ type VideoEditorProps = {
 
 /* ─── Constants ─────────────────────────────────────────────────────── */
 
-const MODE_OPTIONS: { value: VideoSceneMode; label: string; icon: typeof Film }[] = [
-  { value: "t2v", label: "Text → Video", icon: Film },
-  { value: "i2v", label: "Image → Video", icon: Camera },
-  { value: "character", label: "Character", icon: Sparkles },
-  { value: "extend", label: "Extend", icon: ChevronRight },
-];
+/* MODE_OPTIONS removed — mode is now auto-detected from scene content */
 
 const DURATION_OPTIONS = [5, 10, 15] as const;
 
@@ -83,12 +77,16 @@ function SceneCard({
 }) {
   const [showTrim, setShowTrim] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
-  const [showModeMenu, setShowModeMenu] = useState(false);
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editPrompt, setEditPrompt] = useState(scene.prompt);
   const isLoading = scene.status === "generating" || scene.status === "regenerating";
 
-  const currentMode = MODE_OPTIONS.find((m) => m.value === scene.mode) ?? MODE_OPTIONS[0];
+  // Auto-detect mode label from scene content
+  const autoModeLabel = scene.sourceImageUrl
+    ? "Image → Video"
+    : scene.referenceImageIds.length > 0
+      ? "Character"
+      : "Text → Video";
 
   return (
     <div
@@ -133,45 +131,12 @@ function SceneCard({
         </button>
       </div>
 
-      {/* Mode + Duration selectors */}
+      {/* Mode badge + Duration selector */}
       <div className="mb-3 flex items-center gap-2">
-        {/* Mode selector */}
-        <div className="relative">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowModeMenu(!showModeMenu);
-            }}
-            className="flex h-7 items-center gap-1.5 rounded-lg bg-slate/80 px-2.5 text-[11px] text-ash hover:text-cloud hover:bg-smoke transition-colors cursor-pointer"
-          >
-            <currentMode.icon size={11} />
-            <span>{currentMode.label}</span>
-            <ChevronDown size={9} />
-          </button>
-
-          {showModeMenu && (
-            <div className="absolute top-full left-0 z-20 mt-1 w-40 rounded-xl border border-smoke bg-graphite py-1 shadow-xl shadow-void/60">
-              {MODE_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onUpdate({ mode: opt.value });
-                    setShowModeMenu(false);
-                  }}
-                  className={`
-                    flex w-full items-center gap-2 px-3 py-1.5
-                    text-[11px] transition-colors cursor-pointer
-                    ${opt.value === scene.mode ? "text-royal bg-royal/10" : "text-ash hover:text-cloud hover:bg-slate"}
-                  `}
-                >
-                  <opt.icon size={12} />
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Auto-detected mode badge (read-only) */}
+        <Badge variant="default" className="text-[9px] bg-slate/60">
+          {autoModeLabel}
+        </Badge>
 
         {/* Duration selector */}
         <div className="flex items-center gap-1 rounded-lg bg-slate/80 px-1">
@@ -707,7 +672,6 @@ export function VideoEditor({
   const [stitching, setStitching] = useState(false);
   const [stitchedUrl, setStitchedUrl] = useState<string | null>(null);
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
-  const [showRefSection, setShowRefSection] = useState(true);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const sourceImageInputRef = useRef<HTMLInputElement>(null);
   const refImageInputRef = useRef<HTMLInputElement>(null);
@@ -762,9 +726,15 @@ export function VideoEditor({
       }
     });
 
+    // Auto-detect mode from scene content
+    let autoMode: VideoSceneMode = "t2v";
+    if (scene.sourceImageUrl) autoMode = "i2v";
+    if (scene.videoUrl && scene.mode === "extend") autoMode = "extend";
+    if (taggedRefs.length > 0) autoMode = "character";
+
     const body: Record<string, unknown> = {
       prompt: processedPrompt,
-      mode: scene.mode,
+      mode: autoMode,
       duration: scene.duration,
     };
 
@@ -775,7 +745,7 @@ export function VideoEditor({
     }
 
     // Extend mode: pass the current video as sourceVideo
-    if (scene.mode === "extend" && scene.videoUrl) {
+    if (autoMode === "extend" && scene.videoUrl) {
       body.sourceVideo = scene.videoUrl;
     }
 
@@ -1112,7 +1082,10 @@ export function VideoEditor({
 
   /* ─ Reference image handlers ─ */
 
-  function handleAddRefImage() {
+  const [pendingRefCategory, setPendingRefCategory] = useState<"character" | "prop" | "scene">("character");
+
+  function handleAddRefImage(category: "character" | "prop" | "scene") {
+    setPendingRefCategory(category);
     refImageInputRef.current?.click();
   }
 
@@ -1124,6 +1097,7 @@ export function VideoEditor({
       id: crypto.randomUUID(),
       url,
       label: "",
+      category: pendingRefCategory,
     };
     updateProject({
       referenceImages: [...(project.referenceImages ?? []), newRef],
@@ -1445,104 +1419,216 @@ export function VideoEditor({
         )}
       </div>
 
-      {/* ── Reference Images ───────────────────────────────────── */}
+      {/* ── Reference Images — Three Categories ─────────────── */}
       <div className="border-t border-smoke/60 px-5 py-4">
-        <button
-          onClick={() => setShowRefSection(!showRefSection)}
-          className="flex items-center gap-2 mb-3 cursor-pointer group"
-        >
+        <div className="flex items-center gap-2 mb-4">
           <ImageIcon size={16} className="text-royal" />
-          <h4 className="text-xs font-semibold text-cloud">
-            Reference Images
-          </h4>
+          <h4 className="text-xs font-semibold text-cloud">Reference Library</h4>
           <span className="text-[10px] text-ash">
-            @image tags for character/product consistency {selectedSceneId ? "· click to tag to selected scene" : "· select a scene first"}
+            {selectedSceneId ? "· click to tag to selected scene" : "· select a scene first"}
           </span>
-          <ChevronDown
-            size={12}
-            className={`text-ash ml-auto transition-transform ${showRefSection ? "rotate-0" : "-rotate-90"}`}
-          />
-        </button>
+        </div>
 
-        {showRefSection && (
-          <div className="flex gap-2.5 flex-wrap">
-            {refs.map((img, i) => {
-              const selectedScene = project.scenes.find((s) => s.id === selectedSceneId);
-              const isTaggedToSelected = selectedScene?.referenceImageIds.includes(img.id) ?? false;
-              return (
-              <div
-                key={img.id}
-                onClick={() => {
-                  if (!selectedSceneId) return;
-                  const scene = project.scenes.find((s) => s.id === selectedSceneId);
-                  if (!scene) return;
-                  const has = scene.referenceImageIds.includes(img.id);
-                  updateScene(selectedSceneId, {
-                    referenceImageIds: has
-                      ? scene.referenceImageIds.filter((id) => id !== img.id)
-                      : [...scene.referenceImageIds, img.id],
-                  });
-                }}
-                className={`relative w-20 h-20 rounded-xl overflow-hidden border group/ref transition-colors cursor-pointer ${
-                  isTaggedToSelected
-                    ? "border-royal ring-2 ring-royal/40"
-                    : "border-smoke/60 hover:border-royal/40"
-                }`}
-              >
-                <img
-                  src={img.url}
-                  alt={img.label || `Reference ${i + 1}`}
-                  className="w-full h-full object-cover"
-                />
-
-                {/* Tag badge */}
-                <div className="absolute top-1 left-1">
-                  <Badge
-                    variant="default"
-                    className="text-[8px] bg-void/80 backdrop-blur-sm text-cloud border border-white/10 px-1 py-0"
+        {/* Characters */}
+        <div className="mb-3">
+          <span className="text-[10px] uppercase tracking-wider text-ash/60 font-medium">Characters</span>
+          <div className="flex gap-2 mt-1.5 flex-wrap">
+            {(() => {
+              // Global index: characters first (offset 0)
+              const charRefs = refs.filter((r) => r.category === "character");
+              const charOffset = 0;
+              return charRefs.map((img, i) => {
+                const globalIdx = charOffset + i + 1;
+                const selectedScene = project.scenes.find((s) => s.id === selectedSceneId);
+                const isTaggedToSelected = selectedScene?.referenceImageIds.includes(img.id) ?? false;
+                return (
+                  <div
+                    key={img.id}
+                    onClick={() => {
+                      if (!selectedSceneId) return;
+                      const scene = project.scenes.find((s) => s.id === selectedSceneId);
+                      if (!scene) return;
+                      const has = scene.referenceImageIds.includes(img.id);
+                      updateScene(selectedSceneId, {
+                        referenceImageIds: has
+                          ? scene.referenceImageIds.filter((id) => id !== img.id)
+                          : [...scene.referenceImageIds, img.id],
+                      });
+                    }}
+                    className={`relative w-20 h-20 rounded-xl overflow-hidden border group/ref transition-colors cursor-pointer ${
+                      isTaggedToSelected
+                        ? "border-royal ring-2 ring-royal/40"
+                        : "border-smoke/60 hover:border-royal/40"
+                    }`}
                   >
-                    @image{i + 1}
-                  </Badge>
-                </div>
-
-                {/* Remove button */}
-                <button
-                  onClick={() => handleRemoveRefImage(img.id)}
-                  className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-void/70 text-ash opacity-0 group-hover/ref:opacity-100 hover:text-coral transition-all cursor-pointer"
-                >
-                  <X size={8} />
-                </button>
-
-                {/* Label input */}
-                <input
-                  placeholder="Label..."
-                  value={img.label}
-                  onChange={(e) =>
-                    handleUpdateRefLabel(img.id, e.target.value)
-                  }
-                  className="absolute bottom-0 w-full bg-void/80 backdrop-blur-sm text-[9px] text-center py-0.5 text-cloud placeholder:text-ash/50 border-0 outline-none"
-                  onClick={(e) => e.stopPropagation()}
-                />
-              </div>
-            );})}
-
-            {/* Add reference image button */}
-            {refs.length < 9 && (
+                    <img src={img.url} alt={img.label || `Character ${i + 1}`} className="w-full h-full object-cover" />
+                    <div className="absolute top-1 left-1">
+                      <Badge variant="default" className="text-[8px] bg-void/80 backdrop-blur-sm text-cloud border border-white/10 px-1 py-0">
+                        @image{globalIdx}
+                      </Badge>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleRemoveRefImage(img.id); }}
+                      className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-void/70 text-ash opacity-0 group-hover/ref:opacity-100 hover:text-coral transition-all cursor-pointer"
+                    >
+                      <X size={8} />
+                    </button>
+                    <input
+                      placeholder="Label..."
+                      value={img.label}
+                      onChange={(e) => handleUpdateRefLabel(img.id, e.target.value)}
+                      className="absolute bottom-0 w-full bg-void/80 backdrop-blur-sm text-[9px] text-center py-0.5 text-cloud placeholder:text-ash/50 border-0 outline-none"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                );
+              });
+            })()}
+            {refs.filter((r) => r.category === "character").length < 3 && (
               <button
-                onClick={handleAddRefImage}
-                className="
-                  w-20 h-20 rounded-xl border border-dashed border-smoke/60
-                  flex flex-col items-center justify-center
-                  text-ash/40 hover:text-royal hover:border-royal/40 hover:bg-royal/[0.02]
-                  transition-all duration-200 cursor-pointer
-                "
+                onClick={() => handleAddRefImage("character")}
+                className="w-20 h-20 rounded-xl border border-dashed border-smoke/60 flex flex-col items-center justify-center text-ash/40 hover:text-royal hover:border-royal/40 hover:bg-royal/[0.02] transition-all duration-200 cursor-pointer"
               >
                 <Plus size={16} />
-                <span className="text-[9px] mt-1 font-medium">Add Ref</span>
+                <span className="text-[9px] mt-1 font-medium">+ Add</span>
               </button>
             )}
           </div>
-        )}
+        </div>
+
+        {/* Props */}
+        <div className="mb-3">
+          <span className="text-[10px] uppercase tracking-wider text-ash/60 font-medium">Props</span>
+          <div className="flex gap-2 mt-1.5 flex-wrap">
+            {(() => {
+              // Global index: props after characters (offset = character count)
+              const propRefs = refs.filter((r) => r.category === "prop");
+              const propOffset = refs.filter((r) => r.category === "character").length;
+              return propRefs.map((img, i) => {
+                const globalIdx = propOffset + i + 1;
+                const selectedScene = project.scenes.find((s) => s.id === selectedSceneId);
+                const isTaggedToSelected = selectedScene?.referenceImageIds.includes(img.id) ?? false;
+                return (
+                  <div
+                    key={img.id}
+                    onClick={() => {
+                      if (!selectedSceneId) return;
+                      const scene = project.scenes.find((s) => s.id === selectedSceneId);
+                      if (!scene) return;
+                      const has = scene.referenceImageIds.includes(img.id);
+                      updateScene(selectedSceneId, {
+                        referenceImageIds: has
+                          ? scene.referenceImageIds.filter((id) => id !== img.id)
+                          : [...scene.referenceImageIds, img.id],
+                      });
+                    }}
+                    className={`relative w-20 h-20 rounded-xl overflow-hidden border group/ref transition-colors cursor-pointer ${
+                      isTaggedToSelected
+                        ? "border-royal ring-2 ring-royal/40"
+                        : "border-smoke/60 hover:border-royal/40"
+                    }`}
+                  >
+                    <img src={img.url} alt={img.label || `Prop ${i + 1}`} className="w-full h-full object-cover" />
+                    <div className="absolute top-1 left-1">
+                      <Badge variant="default" className="text-[8px] bg-void/80 backdrop-blur-sm text-cloud border border-white/10 px-1 py-0">
+                        @image{globalIdx}
+                      </Badge>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleRemoveRefImage(img.id); }}
+                      className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-void/70 text-ash opacity-0 group-hover/ref:opacity-100 hover:text-coral transition-all cursor-pointer"
+                    >
+                      <X size={8} />
+                    </button>
+                    <input
+                      placeholder="Label..."
+                      value={img.label}
+                      onChange={(e) => handleUpdateRefLabel(img.id, e.target.value)}
+                      className="absolute bottom-0 w-full bg-void/80 backdrop-blur-sm text-[9px] text-center py-0.5 text-cloud placeholder:text-ash/50 border-0 outline-none"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                );
+              });
+            })()}
+            {refs.filter((r) => r.category === "prop").length < 3 && (
+              <button
+                onClick={() => handleAddRefImage("prop")}
+                className="w-20 h-20 rounded-xl border border-dashed border-smoke/60 flex flex-col items-center justify-center text-ash/40 hover:text-royal hover:border-royal/40 hover:bg-royal/[0.02] transition-all duration-200 cursor-pointer"
+              >
+                <Plus size={16} />
+                <span className="text-[9px] mt-1 font-medium">+ Add</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Scenes / Environments */}
+        <div>
+          <span className="text-[10px] uppercase tracking-wider text-ash/60 font-medium">Environments</span>
+          <div className="flex gap-2 mt-1.5 flex-wrap">
+            {(() => {
+              // Global index: scenes after characters + props
+              const sceneRefs = refs.filter((r) => r.category === "scene");
+              const sceneOffset = refs.filter((r) => r.category === "character").length + refs.filter((r) => r.category === "prop").length;
+              return sceneRefs.map((img, i) => {
+                const globalIdx = sceneOffset + i + 1;
+                const selectedScene = project.scenes.find((s) => s.id === selectedSceneId);
+                const isTaggedToSelected = selectedScene?.referenceImageIds.includes(img.id) ?? false;
+                return (
+                  <div
+                    key={img.id}
+                    onClick={() => {
+                      if (!selectedSceneId) return;
+                      const scene = project.scenes.find((s) => s.id === selectedSceneId);
+                      if (!scene) return;
+                      const has = scene.referenceImageIds.includes(img.id);
+                      updateScene(selectedSceneId, {
+                        referenceImageIds: has
+                          ? scene.referenceImageIds.filter((id) => id !== img.id)
+                          : [...scene.referenceImageIds, img.id],
+                      });
+                    }}
+                    className={`relative w-20 h-20 rounded-xl overflow-hidden border group/ref transition-colors cursor-pointer ${
+                      isTaggedToSelected
+                        ? "border-royal ring-2 ring-royal/40"
+                        : "border-smoke/60 hover:border-royal/40"
+                    }`}
+                  >
+                    <img src={img.url} alt={img.label || `Environment ${i + 1}`} className="w-full h-full object-cover" />
+                    <div className="absolute top-1 left-1">
+                      <Badge variant="default" className="text-[8px] bg-void/80 backdrop-blur-sm text-cloud border border-white/10 px-1 py-0">
+                        @image{globalIdx}
+                      </Badge>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleRemoveRefImage(img.id); }}
+                      className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-void/70 text-ash opacity-0 group-hover/ref:opacity-100 hover:text-coral transition-all cursor-pointer"
+                    >
+                      <X size={8} />
+                    </button>
+                    <input
+                      placeholder="Label..."
+                      value={img.label}
+                      onChange={(e) => handleUpdateRefLabel(img.id, e.target.value)}
+                      className="absolute bottom-0 w-full bg-void/80 backdrop-blur-sm text-[9px] text-center py-0.5 text-cloud placeholder:text-ash/50 border-0 outline-none"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                );
+              });
+            })()}
+            {refs.filter((r) => r.category === "scene").length < 3 && (
+              <button
+                onClick={() => handleAddRefImage("scene")}
+                className="w-20 h-20 rounded-xl border border-dashed border-smoke/60 flex flex-col items-center justify-center text-ash/40 hover:text-royal hover:border-royal/40 hover:bg-royal/[0.02] transition-all duration-200 cursor-pointer"
+              >
+                <Plus size={16} />
+                <span className="text-[9px] mt-1 font-medium">+ Add</span>
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* ── Asset Drawer ───────────────────────────────────────── */}

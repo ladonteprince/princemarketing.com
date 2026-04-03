@@ -29,6 +29,7 @@ export interface ReferenceImage {
   id: string;
   url: string;
   label: string;
+  category: "character" | "prop" | "scene";
 }
 
 export interface VideoScene {
@@ -69,5 +70,5 @@ export type CanvasAction =
   | { type: "extend-video-scene"; videoProjectId: string; sceneIndex: number }
   | { type: "stitch-video"; videoProjectId: string }
   | { type: "set-scene-mode"; videoProjectId: string; sceneIndex: number; mode: VideoSceneMode }
-  | { type: "add-reference-image"; videoProjectId: string; url: string; label: string }
+  | { type: "add-reference-image"; videoProjectId: string; url: string; label: string; category?: "character" | "prop" | "scene" }
   | { type: "tag-reference-to-scene"; videoProjectId: string; sceneIndex: number; refLabel: string };

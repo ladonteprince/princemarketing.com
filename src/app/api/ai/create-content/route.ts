@@ -45,6 +45,7 @@ const requestSchema = z.object({
       }),
     )
     .optional(),
+  creationMode: z.enum(["plan", "auto"]).optional(),
 });
 
 // WHY: Agentic system prompt — tells Claude to return structured action blocks
@@ -120,7 +121,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
-    const { message, history, existingNodes } = parsed.data;
+    const { message, history, existingNodes, creationMode } = parsed.data;
 
     // WHY: Inject the user's social media context so the AI can give personalized advice.
     // e.g. "Based on your recent Instagram posts about sneakers..." instead of generic tips.
@@ -217,7 +218,36 @@ export async function POST(request: Request) {
     + (analyticsContext
       ? `\n\nUser's recent analytics (reference this proactively when relevant):\n${analyticsContext}\nWhen the user asks to create content, suggest using GENERATE_VARIANTS to get A/B options. When they ask about performance, use GET_ANALYTICS for deep insights.`
       : "")
-    + assetsContext;
+    + assetsContext
+    + (creationMode === "plan"
+      ? `\n\nCREATION MODE: PLAN
+When the user asks you to create a video or commercial:
+1. Break it into individual scenes
+2. Present Scene 1 ONLY with a detailed description and CREATE_VIDEO action containing just 1 scene
+3. Wait for user approval ("approved", "looks good", "next", etc.) or revision requests
+4. Only after approval, present Scene 2
+5. Continue until all scenes are done
+6. After the last scene is approved, offer to Stitch & Export
+
+Example flow:
+User: "Make a 15-second sneaker commercial"
+You: "Here is my plan for Scene 1 of 3: [description]. Let me generate it."
+[CREATE_VIDEO with 1 scene]
+User: "Approved"
+You: "Scene 2 of 3: [description]"
+[ADD_VIDEO_SCENE with scene 2]
+...`
+      : creationMode === "auto"
+        ? `\n\nCREATION MODE: AUTO
+When the user asks you to create a video or commercial:
+1. Create ALL scenes at once in a single CREATE_VIDEO action
+2. Generate them all simultaneously
+3. Self-critique the results and regenerate any below quality threshold
+4. Stitch when all pass
+5. Present the final result
+
+The user wants hands-off generation. Do not ask for approval — just execute.`
+        : "");
 
     // Audit log: track what went into the system prompt (metadata only, no PII)
     auditPromptBuild(

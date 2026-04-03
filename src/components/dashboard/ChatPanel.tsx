@@ -522,6 +522,7 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
   const [isThinking, setIsThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessionId] = useState(() => crypto.randomUUID());
+  const [creationMode, setCreationMode] = useState<"plan" | "auto">("plan");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Persist chat messages to localStorage (keep last 50 to prevent bloat)
@@ -537,6 +538,18 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
   }, []);
 
   const userName = session?.user?.name ?? "You";
+
+  // Shift+Tab toggles between Plan and Auto mode
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.shiftKey && e.key === "Tab") {
+        e.preventDefault();
+        setCreationMode(prev => prev === "plan" ? "auto" : "plan");
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -633,6 +646,7 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
           history,
           existingNodes: nodes.map((n) => ({ id: n.id, type: n.type, title: n.title })),
           fetchAssets: true,
+          creationMode,
         }),
       });
 
@@ -943,6 +957,24 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
             </div>
           )}
         </div>
+      </div>
+
+      {/* Mode toggle */}
+      <div className="flex items-center gap-2 px-4 py-1.5 border-t border-smoke/30">
+        <span className="text-[10px] text-ash">Mode:</span>
+        <button
+          onClick={() => setCreationMode(creationMode === "plan" ? "auto" : "plan")}
+          className={`flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors cursor-pointer ${
+            creationMode === "plan"
+              ? "bg-royal/15 text-royal"
+              : "bg-emerald-500/15 text-emerald-400"
+          }`}
+        >
+          {creationMode === "plan" ? "\u23F8 Plan" : "\u26A1 Auto"}
+        </button>
+        <span className="text-[9px] text-ash/50">
+          {creationMode === "plan" ? "Review each scene" : "Generate all at once"}
+        </span>
       </div>
 
       {/* Input */}
