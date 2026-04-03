@@ -411,8 +411,8 @@ export default function DashboardPage() {
 
       {/* Main split panel: Canvas + Chat */}
       <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
-        {/* Main content area — Video Editor when active, otherwise Canvas */}
-        <div className="flex-1 min-h-[40vh] lg:min-h-0 overflow-y-auto">
+        {/* Main content area — hidden on mobile (chat-first), visible on desktop */}
+        <div className="hidden lg:block flex-1 min-h-0 overflow-y-auto">
           {activeProject ? (
             <div ref={videoEditorRef}>
               <ErrorBoundary>
@@ -482,10 +482,10 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Chat panel — full width on mobile, side panel on desktop */}
+        {/* Chat panel — full height on mobile (chat-first), side panel on desktop */}
         <div
           className={`
-            w-full shrink-0 transition-[width] duration-300 ease-in-out
+            flex-1 lg:flex-none w-full shrink-0 transition-[width] duration-300 ease-in-out
             lg:w-auto
             ${chatCollapsed ? "lg:w-12" : "lg:w-[30%] lg:min-w-[320px] lg:max-w-[480px]"}
           `}
