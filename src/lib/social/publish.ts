@@ -159,34 +159,21 @@ async function publishToFacebook({ content, mediaUrl, mediaUrls, mediaType, acce
   }
 }
 
-// Instagram: Graph API — try direct IG API first, fall back to Facebook Pages method
+// Instagram: Graph API via Facebook Pages
+// WHY: instagram_basic scope on the Facebook token grants access to instagram_business_account
+// User must re-connect Facebook after we added instagram_basic + instagram_content_publish scopes
 async function publishToInstagram({ content, mediaUrl, mediaUrls, mediaType, accessToken }: PublishParams): Promise<PublishResult> {
   try {
-    let igAccountId: string | null = null;
-
-    // Method 1: Try direct Instagram Graph API (works with instagram_business_basic token)
-    try {
-      const meRes = await fetch(
-        `https://graph.instagram.com/v19.0/me?fields=id,username&access_token=${accessToken}`,
-      );
-      const meData = await meRes.json();
-      if (meData.id && !meData.error) {
-        igAccountId = meData.id;
-      }
-    } catch {}
-
-    // Method 2: Fall back to Facebook Pages method
-    if (!igAccountId) {
-      const pagesRes = await fetch(
-        `https://graph.facebook.com/v19.0/me/accounts?fields=instagram_business_account&access_token=${accessToken}`,
-      );
-      const pagesData = await pagesRes.json();
-      const pageWithIg = (pagesData.data ?? []).find((p: any) => p.instagram_business_account?.id);
-      igAccountId = pageWithIg?.instagram_business_account?.id ?? null;
-    }
+    // Get Instagram business account ID via Facebook pages
+    const pagesRes = await fetch(
+      `https://graph.facebook.com/v19.0/me/accounts?fields=instagram_business_account&access_token=${accessToken}`,
+    );
+    const pagesData = await pagesRes.json();
+    const pageWithIg = (pagesData.data ?? []).find((p: any) => p.instagram_business_account?.id);
+    const igAccountId = pageWithIg?.instagram_business_account?.id ?? null;
 
     if (!igAccountId) {
-      return { success: false, error: "No Instagram business account found. Re-connect Instagram in Settings." };
+      return { success: false, error: "No Instagram business account found. Re-connect Facebook in Settings (with Instagram permissions)." };
     }
 
     // Story post (image or video)

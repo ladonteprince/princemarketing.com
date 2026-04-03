@@ -6,7 +6,7 @@ import { Sidebar } from "./Sidebar";
 import { ChatPanel } from "@/components/dashboard/ChatPanel";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
-import { Menu } from "lucide-react";
+import { Menu, MessageSquare } from "lucide-react";
 import type { CanvasAction, ContentNode } from "@/types/canvas";
 
 type ShellProps = {
@@ -79,23 +79,51 @@ export function Shell({ children }: ShellProps) {
         {children}
       </main>
 
-      {/* Global Chat Panel — collapsible right panel on all pages except Workspace */}
+      {/* Global Chat Panel — collapsible right panel on desktop, full-screen overlay on mobile */}
       {!isWorkspace && (
-        <div
-          className={`
-            hidden lg:block shrink-0 transition-[width] duration-300 ease-in-out
-            ${chatOpen ? "w-[30%] min-w-[320px] max-w-[480px]" : "w-12"}
-          `}
-        >
-          <ErrorBoundary>
-            <ChatPanel
-              collapsed={!chatOpen}
-              onToggle={() => setChatOpen((prev) => !prev)}
-              onCanvasAction={handleCanvasAction}
-              nodes={[]}
-            />
-          </ErrorBoundary>
-        </div>
+        <>
+          {/* Desktop: docked right panel */}
+          <div
+            className={`
+              hidden lg:block shrink-0 transition-[width] duration-300 ease-in-out
+              ${chatOpen ? "w-[30%] min-w-[320px] max-w-[480px]" : "w-12"}
+            `}
+          >
+            <ErrorBoundary>
+              <ChatPanel
+                collapsed={!chatOpen}
+                onToggle={() => setChatOpen((prev) => !prev)}
+                onCanvasAction={handleCanvasAction}
+                nodes={[]}
+              />
+            </ErrorBoundary>
+          </div>
+
+          {/* Mobile: floating button + full-screen overlay */}
+          <div className="lg:hidden">
+            {!chatOpen && (
+              <button
+                onClick={() => setChatOpen(true)}
+                className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-royal text-white shadow-lg shadow-royal/30 hover:bg-royal/80 transition-all cursor-pointer"
+                title="Open AI Strategist"
+              >
+                <MessageSquare size={22} strokeWidth={1.5} />
+              </button>
+            )}
+            {chatOpen && (
+              <div className="fixed inset-0 z-50 bg-graphite">
+                <ErrorBoundary>
+                  <ChatPanel
+                    collapsed={false}
+                    onToggle={() => setChatOpen(false)}
+                    onCanvasAction={handleCanvasAction}
+                    nodes={[]}
+                  />
+                </ErrorBoundary>
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

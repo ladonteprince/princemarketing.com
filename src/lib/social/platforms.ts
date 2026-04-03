@@ -20,7 +20,7 @@ export const PLATFORMS = {
     name: "Facebook",
     authUrl: "https://www.facebook.com/v19.0/dialog/oauth",
     tokenUrl: "https://graph.facebook.com/v19.0/oauth/access_token",
-    scopes: ["pages_manage_posts", "pages_read_engagement", "pages_show_list", "pages_manage_metadata", "read_insights", "ads_read"],
+    scopes: ["pages_manage_posts", "pages_read_engagement", "pages_show_list", "pages_manage_metadata", "read_insights", "ads_read", "instagram_basic", "instagram_content_publish"],
     icon: "Facebook",
     envPrefix: "FACEBOOK",
     dbType: "FACEBOOK" as const,

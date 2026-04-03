@@ -67,9 +67,19 @@ export async function POST(request: Request) {
 
     const results: Record<string, { success: boolean; postId?: string; error?: string }> = {};
 
+    // Fetch Facebook token for Instagram (IG publishing uses FB Graph API with instagram_basic scope)
+    const fbPlatform = await db.platform.findFirst({
+      where: { userId: session.user.id, type: "FACEBOOK", connected: true },
+    });
+
     for (const platformKey of platforms as PlatformKey[]) {
       const dbType = PLATFORMS[platformKey].dbType;
-      const connected = connectedPlatforms.find((p) => p.type === dbType);
+      let connected = connectedPlatforms.find((p) => p.type === dbType);
+
+      // Instagram uses Facebook's token (requires instagram_basic + instagram_content_publish scopes)
+      if (platformKey === "instagram" && fbPlatform?.accessToken) {
+        connected = connected ? { ...connected, accessToken: fbPlatform.accessToken } : null;
+      }
 
       if (!connected || !connected.accessToken) {
         results[platformKey] = {
