@@ -47,6 +47,7 @@ const requestSchema = z.object({
     .optional(),
   creationMode: z.enum(["plan", "auto"]).optional(),
   memories: z.string().optional(),
+  projectName: z.string().max(200).optional(),
 });
 
 // WHY: Agentic system prompt — tells Claude to return structured action blocks
@@ -122,7 +123,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
-    const { message, history, existingNodes, creationMode, memories } = parsed.data;
+    const { message, history, existingNodes, creationMode, memories, projectName } = parsed.data;
 
     // WHY: Inject the user's social media context so the AI can give personalized advice.
     // e.g. "Based on your recent Instagram posts about sneakers..." instead of generic tips.
@@ -223,6 +224,9 @@ export async function POST(request: Request) {
     + assetsContext
     + (memories
       ? `\n\nUSER MEMORIES (remembered from past conversations — use these to personalize your responses. Reference them naturally, e.g. "Based on what I remember about your brand..."):\n${memories}`
+      : "")
+    + (projectName && projectName !== "Default Project"
+      ? `\n\nACTIVE PROJECT: ${projectName}\nAll content and memories are scoped to this project. Reference the project name when relevant.`
       : "")
     + (creationMode === "plan"
       ? `\n\nCREATION MODE: PLAN

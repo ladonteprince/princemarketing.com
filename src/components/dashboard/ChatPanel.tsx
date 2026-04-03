@@ -22,6 +22,9 @@ import {
   ListChecks,
   Rocket,
   Brain,
+  FolderOpen,
+  ChevronDown,
+  Plus,
 } from "lucide-react";
 import type { ContentNode, CanvasAction } from "@/types/canvas";
 
@@ -473,6 +476,7 @@ const ACTION_LABELS: Record<string, { label: string; icon: typeof ImageIcon }> =
   ADD_REFERENCE_IMAGE: { label: "Adding reference image", icon: ImageIcon },
   TAG_REFERENCE_TO_SCENE: { label: "Tagging reference to scene", icon: ImageIcon },
   SAVE_MEMORY: { label: "Saving memory", icon: Brain },
+  DELETE_MEMORY: { label: "Forgetting memory", icon: Brain },
 };
 
 // Parse AI responses for structured content creation actions (legacy [NODE:...] markers)
@@ -514,6 +518,12 @@ function parseContentActions(
 const CHAT_STORAGE_KEY = "pm-chat-messages";
 const MEMORIES_STORAGE_KEY = "pm-ai-memories";
 
+type Project = {
+  id: string;
+  name: string;
+  createdAt: string;
+};
+
 type AIMemory = {
   id: string;
   type: "brand" | "feedback" | "project" | "asset" | "reference";
@@ -536,19 +546,53 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
   const [error, setError] = useState<string | null>(null);
   const [sessionId] = useState(() => crypto.randomUUID());
   const [creationMode, setCreationMode] = useState<"plan" | "auto">("plan");
+
+  // --- Project system ---
+  const [projects, setProjects] = useState<Project[]>(() => {
+    if (typeof window === "undefined") return [{ id: "default", name: "Default Project", createdAt: new Date().toISOString() }];
+    try {
+      const saved = JSON.parse(localStorage.getItem("pm-projects") || "[]");
+      return saved.length > 0 ? saved : [{ id: "default", name: "Default Project", createdAt: new Date().toISOString() }];
+    } catch { return [{ id: "default", name: "Default Project", createdAt: new Date().toISOString() }]; }
+  });
+  const [activeProjectId, setActiveProjectId] = useState<string>(() => {
+    if (typeof window === "undefined") return "default";
+    return localStorage.getItem("pm-active-project") || "default";
+  });
+  const [showProjectPicker, setShowProjectPicker] = useState(false);
+
+  // Memories are scoped per project
+  const memoriesKey = `pm-ai-memories-${activeProjectId}`;
   const [memories, setMemories] = useState<AIMemory[]>(() => {
     if (typeof window === "undefined") return [];
     try {
-      return JSON.parse(localStorage.getItem(MEMORIES_STORAGE_KEY) || "[]");
+      return JSON.parse(localStorage.getItem(`pm-ai-memories-${typeof window !== "undefined" ? (localStorage.getItem("pm-active-project") || "default") : "default"}`) || "[]");
     } catch { return []; }
   });
   const [showMemories, setShowMemories] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Persist memories to localStorage
+  // Persist projects to localStorage
   useEffect(() => {
-    localStorage.setItem(MEMORIES_STORAGE_KEY, JSON.stringify(memories));
-  }, [memories]);
+    localStorage.setItem("pm-projects", JSON.stringify(projects));
+  }, [projects]);
+
+  useEffect(() => {
+    localStorage.setItem("pm-active-project", activeProjectId);
+  }, [activeProjectId]);
+
+  // Reload memories when active project changes
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(memoriesKey) || "[]");
+      setMemories(saved);
+    } catch { setMemories([]); }
+  }, [memoriesKey]);
+
+  // Persist memories to localStorage (scoped by project)
+  useEffect(() => {
+    localStorage.setItem(memoriesKey, JSON.stringify(memories));
+  }, [memories, memoriesKey]);
 
   // Persist chat messages to localStorage (keep last 50 to prevent bloat)
   useEffect(() => {
@@ -571,14 +615,15 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
         e.preventDefault();
         setCreationMode(prev => prev === "plan" ? "auto" : "plan");
       }
-      // Escape closes memories dropdown
-      if (e.key === "Escape" && showMemories) {
-        setShowMemories(false);
+      // Escape closes dropdowns
+      if (e.key === "Escape") {
+        if (showMemories) setShowMemories(false);
+        if (showProjectPicker) setShowProjectPicker(false);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [showMemories]);
+  }, [showMemories, showProjectPicker]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -620,7 +665,7 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
 
         let result: { success: boolean; detail: string; nodeRef?: string };
 
-        // Handle SAVE_MEMORY inline since it needs access to setMemories
+        // Handle SAVE_MEMORY and DELETE_MEMORY inline since they need access to setMemories
         if (agentActions[i].action === "SAVE_MEMORY") {
           const newMemory: AIMemory = {
             id: crypto.randomUUID(),
@@ -635,6 +680,10 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
             return [...filtered, newMemory];
           });
           result = { success: true, detail: `Remembered: ${newMemory.title}` };
+        } else if (agentActions[i].action === "DELETE_MEMORY") {
+          const title = agentActions[i].title ?? "";
+          setMemories((prev) => prev.filter((m) => m.title.toLowerCase() !== title.toLowerCase()));
+          result = { success: true, detail: `Forgot: ${title}` };
         } else {
           // Progress callback for SSE-streamed actions (video generation)
           const statusCallback = (update: StatusUpdate) => {
@@ -699,6 +748,7 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
           memories: memories.length > 0
             ? memories.map((m) => `[${m.type}] ${m.title}: ${m.content}`).join("\n")
             : undefined,
+          projectName: projects.find((p) => p.id === activeProjectId)?.name ?? "Default Project",
         }),
       });
 
@@ -837,6 +887,52 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
         <div className="flex items-center gap-2">
           <img src="/logos/pm-icon.svg" alt="AI" className="h-5 w-5" />
           <span className="text-sm font-semibold text-cloud">AI Strategist</span>
+          {/* Project selector */}
+          <div className="relative">
+            <button
+              onClick={() => { setShowProjectPicker(!showProjectPicker); setShowMemories(false); }}
+              className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] text-ash hover:text-cloud border border-smoke/30 hover:border-smoke transition-colors cursor-pointer"
+            >
+              <FolderOpen size={10} />
+              <span className="max-w-[80px] truncate">{projects.find((p) => p.id === activeProjectId)?.name ?? "Project"}</span>
+              <ChevronDown size={8} />
+            </button>
+
+            {showProjectPicker && (
+              <div className="absolute left-0 top-full z-30 mt-1 w-56 rounded-xl border border-smoke bg-graphite p-2 shadow-xl">
+                <div className="text-[9px] uppercase tracking-wider text-ash/50 font-medium px-2 mb-1">Projects</div>
+                {projects.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => { setActiveProjectId(p.id); setShowProjectPicker(false); }}
+                    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] transition-colors cursor-pointer ${
+                      p.id === activeProjectId ? "bg-royal/10 text-royal" : "text-ash hover:text-cloud hover:bg-slate"
+                    }`}
+                  >
+                    <FolderOpen size={12} />
+                    {p.name}
+                  </button>
+                ))}
+                <div className="border-t border-smoke/30 mt-1 pt-1">
+                  <button
+                    onClick={() => {
+                      const name = prompt("New project name:");
+                      if (name?.trim()) {
+                        const newProject: Project = { id: crypto.randomUUID(), name: name.trim(), createdAt: new Date().toISOString() };
+                        setProjects((prev) => [...prev, newProject]);
+                        setActiveProjectId(newProject.id);
+                        setShowProjectPicker(false);
+                      }
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-royal hover:bg-royal/10 transition-colors cursor-pointer"
+                  >
+                    <Plus size={12} />
+                    New Project
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
           <div className="thinking-dots flex items-center gap-0.5">
             <span className="royal-dot royal-dot-animate h-1.5 w-1.5" />
           </div>

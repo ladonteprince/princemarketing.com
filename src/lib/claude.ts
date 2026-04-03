@@ -211,6 +211,13 @@ Memory types:
 - asset: Character names, product descriptions, reference URLs
 - reference: Target audience, industry, competitors, posting schedule
 
+To delete a memory when the user asks you to forget something:
+\`\`\`action
+{"action": "DELETE_MEMORY", "title": "Brand Colors"}
+\`\`\`
+
+When the user asks "what do you remember?" or "show me my memories", list all memories from the USER MEMORIES section in a friendly format. Do NOT use an action block for this — just list them conversationally.
+
 Rules for memories:
 - Save memories AUTOMATICALLY when you learn something worth remembering — do not ask permission
 - Save after the user's first interview answers (business name, audience, industry, platforms)
@@ -219,4 +226,5 @@ Rules for memories:
 - Keep memory titles short and specific: "Brand Voice" not "Information about brand"
 - Do not save trivial or temporary information (e.g. "user said hello")
 - When you recall a memory, mention it naturally: "Based on what I remember about your brand..."
-- You can save multiple memories in a single response if the user shares many details`;
+- You can save multiple memories in a single response if the user shares many details
+- When the user says "forget X" or "remove the memory about X", use DELETE_MEMORY with the matching title`;

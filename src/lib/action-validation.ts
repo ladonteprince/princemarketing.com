@@ -142,7 +142,7 @@ const TagReferenceToSceneAction = z.object({
   refLabel: z.string().max(100),
 });
 
-// --- Memory Action ---
+// --- Memory Actions ---
 // WHY: The AI saves memories about the user's brand, preferences, and past performance.
 // Memories persist across sessions via localStorage and are injected into the system prompt.
 const SaveMemoryAction = z.object({
@@ -150,6 +150,13 @@ const SaveMemoryAction = z.object({
   type: z.enum(["brand", "feedback", "project", "asset", "reference"]),
   title: z.string().max(200),
   content: z.string().max(2000),
+});
+
+// WHY: The AI can delete memories when the user asks to "forget" something.
+// Matches by title (case-insensitive) and removes from localStorage.
+const DeleteMemoryAction = z.object({
+  action: z.literal("DELETE_MEMORY"),
+  title: z.string().max(200),
 });
 
 // Union of all valid actions — anything else is rejected
@@ -174,6 +181,7 @@ export const ActionBlockSchema = z.discriminatedUnion("action", [
   AddReferenceImageAction,
   TagReferenceToSceneAction,
   SaveMemoryAction,
+  DeleteMemoryAction,
 ]);
 
 export type ValidAction = z.infer<typeof ActionBlockSchema>;
