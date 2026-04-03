@@ -771,8 +771,50 @@ export function VideoEditor({
     if (scene.videoUrl && scene.mode === "extend") autoMode = "extend";
     if (taggedRefs.length > 0) autoMode = "character";
 
+    // WHY: Before sending to Seedance, enrich the prompt through the Gemini Director.
+    // Gemini reads our cinematography + music/sound design frameworks and returns a
+    // production-ready prompt with specific camera, lighting, composition, and sound
+    // direction. This is invisible to the user — they see better video, not the framework.
+    let finalPrompt = processedPrompt;
+    try {
+      const sceneCount = project.scenes.length;
+      const sceneIdx = project.scenes.findIndex(s => s.id === scene.id);
+      // Map scene position to Attention Architecture role
+      const attentionRole = sceneIdx === 0
+        ? "stimulation"
+        : sceneIdx === sceneCount - 1
+          ? "validation"
+          : sceneIdx < sceneCount / 2
+            ? "captivation"
+            : "anticipation";
+
+      const directRes = await fetch("/api/proxy/direct", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scenePrompt: processedPrompt,
+          attentionRole,
+          emotion: "engagement",
+          format: scene.duration <= 10 ? "short-form" : "commercial",
+          sceneIndex: sceneIdx >= 0 ? sceneIdx : 0,
+          totalScenes: sceneCount,
+          duration: scene.duration,
+        }),
+      });
+
+      if (directRes.ok) {
+        const directData = await directRes.json();
+        const enriched = directData?.data?.enrichedPrompt ?? directData?.enrichedPrompt;
+        if (enriched && typeof enriched === "string") {
+          finalPrompt = enriched;
+        }
+      }
+    } catch {
+      // Gemini Director unavailable — fall back to raw prompt (no degradation)
+    }
+
     const body: Record<string, unknown> = {
-      prompt: processedPrompt,
+      prompt: finalPrompt,
       mode: autoMode,
       duration: scene.duration,
     };
