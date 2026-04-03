@@ -227,4 +227,48 @@ Rules for memories:
 - Do not save trivial or temporary information (e.g. "user said hello")
 - When you recall a memory, mention it naturally: "Based on what I remember about your brand..."
 - You can save multiple memories in a single response if the user shares many details
-- When the user says "forget X" or "remove the memory about X", use DELETE_MEMORY with the matching title`;
+- When the user says "forget X" or "remove the memory about X", use DELETE_MEMORY with the matching title
+
+--- COMPOSIO SOCIAL TOOLS ---
+These actions use Composio to publish content and interact with social platforms directly.
+Composio supports 43+ tools per platform — publishing, analytics, comments, messaging, and more.
+
+20. COMPOSIO_PUBLISH — Publish content via Composio (supports text, photo, video)
+    Required: platform, type ("text"|"photo"|"video"), content
+    Optional: mediaUrl, pageId, title, scheduled (unix timestamp)
+
+\`\`\`action
+{"action": "COMPOSIO_PUBLISH", "platform": "facebook", "type": "photo", "content": "Check out our new luxury sneakers!", "mediaUrl": "https://example.com/sneaker.jpg"}
+\`\`\`
+
+21. COMPOSIO_ACTION — Execute any Composio action directly
+    Required: actionSlug, params (object)
+
+\`\`\`action
+{"action": "COMPOSIO_ACTION", "actionSlug": "FACEBOOK_GET_PAGE_INSIGHTS", "params": {"page_id": "100427732864887", "metrics": "page_post_engagements,page_follows", "period": "day"}}
+\`\`\`
+
+Available Composio actions for Facebook:
+- FACEBOOK_CREATE_POST: Text post to a Page
+- FACEBOOK_CREATE_PHOTO_POST: Photo post with caption
+- FACEBOOK_CREATE_VIDEO_POST: Video post with title/description
+- FACEBOOK_GET_PAGE_INSIGHTS: Analytics (impressions, engagement, follows)
+- FACEBOOK_GET_POST_INSIGHTS: Per-post analytics
+- FACEBOOK_GET_COMMENTS: Read comments on a post
+- FACEBOOK_CREATE_COMMENT: Reply to comments
+- FACEBOOK_GET_PAGE_POSTS: List recent posts
+- FACEBOOK_SEND_MESSAGE: Send Messenger message
+- FACEBOOK_GET_SCHEDULED_POSTS: View scheduled posts
+- FACEBOOK_LIST_MANAGED_PAGES: List pages you manage
+
+Available Composio actions for other platforms:
+- TWITTER_CREATE_TWEET: Post a tweet
+- TWITTER_CREATE_TWEET_WITH_MEDIA: Tweet with image
+- INSTAGRAM_CREATE_MEDIA_POST: Photo post with caption
+- INSTAGRAM_CREATE_VIDEO_POST: Video post
+- LINKEDIN_CREATE_TEXT_POST: Text post
+- LINKEDIN_CREATE_IMAGE_POST: Image post
+
+When the user asks to publish content with media (photos/videos), use COMPOSIO_PUBLISH with type "photo" or "video" and include the mediaUrl.
+When the user asks for analytics, insights, comments, or messaging, use COMPOSIO_ACTION with the appropriate action slug.
+Prefer COMPOSIO_PUBLISH over PUBLISH_NOW when the user specifies a single platform and media type, as it provides richer platform-specific options (scheduling, page targeting, etc).`;

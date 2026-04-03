@@ -66,6 +66,12 @@ type AgentAction = {
   url?: string;
   label?: string;
   refLabel?: string;
+  // Composio fields
+  mediaUrl?: string;
+  pageId?: string;
+  scheduled?: number;
+  actionSlug?: string;
+  params?: Record<string, unknown>;
 };
 
 type ChatPanelProps = {
@@ -454,6 +460,52 @@ async function executeAction(
       return { success: true, detail: `Reference "${action.refLabel}" tagged to scene ${action.sceneIndex + 1}` };
     }
 
+    // --- Composio Social Actions ---
+    case "COMPOSIO_PUBLISH": {
+      try {
+        const res = await fetch("/api/social/composio-publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            platform: action.platform,
+            type: action.type ?? "text",
+            content: action.content ?? "",
+            mediaUrl: action.mediaUrl,
+            pageId: action.pageId,
+            title: action.title,
+            scheduled: action.scheduled,
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          return { success: true, detail: `Published ${action.type ?? "text"} to ${action.platform}` };
+        }
+        return { success: false, detail: data.error ?? "Publishing failed" };
+      } catch (err) {
+        return { success: false, detail: err instanceof Error ? err.message : "Failed" };
+      }
+    }
+
+    case "COMPOSIO_ACTION": {
+      try {
+        const res = await fetch("/api/social/composio-action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            actionSlug: action.actionSlug,
+            params: action.params ?? {},
+          }),
+        });
+        const data = await res.json();
+        return {
+          success: data.success,
+          detail: JSON.stringify(data.data ?? data.error).slice(0, 500),
+        };
+      } catch (err) {
+        return { success: false, detail: err instanceof Error ? err.message : "Failed" };
+      }
+    }
+
     default:
       return { success: false, detail: `Unknown action: ${action.action}` };
   }
@@ -477,6 +529,8 @@ const ACTION_LABELS: Record<string, { label: string; icon: typeof ImageIcon }> =
   TAG_REFERENCE_TO_SCENE: { label: "Tagging reference to scene", icon: ImageIcon },
   SAVE_MEMORY: { label: "Saving memory", icon: Brain },
   DELETE_MEMORY: { label: "Forgetting memory", icon: Brain },
+  COMPOSIO_PUBLISH: { label: "Publishing via Composio", icon: SendIcon },
+  COMPOSIO_ACTION: { label: "Running social action", icon: BarChart3 },
 };
 
 // Parse AI responses for structured content creation actions (legacy [NODE:...] markers)

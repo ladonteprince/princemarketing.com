@@ -159,6 +159,27 @@ const DeleteMemoryAction = z.object({
   title: z.string().max(200),
 });
 
+// --- Composio Social Actions ---
+// WHY: Composio replaces hand-built social publishing with 43+ tools per platform.
+// These two actions cover all Composio interactions: structured publish + raw action proxy.
+
+const ComposioPublishAction = z.object({
+  action: z.literal("COMPOSIO_PUBLISH"),
+  platform: z.string(),
+  type: z.string().optional(),
+  content: z.string().max(10000),
+  mediaUrl: z.string().optional(),
+  pageId: z.string().optional(),
+  title: z.string().max(200).optional(),
+  scheduled: z.number().optional(),
+});
+
+const ComposioActionAction = z.object({
+  action: z.literal("COMPOSIO_ACTION"),
+  actionSlug: z.string(),
+  params: z.record(z.unknown()).optional(),
+});
+
 // Union of all valid actions — anything else is rejected
 export const ActionBlockSchema = z.discriminatedUnion("action", [
   CreateImageAction,
@@ -182,6 +203,8 @@ export const ActionBlockSchema = z.discriminatedUnion("action", [
   TagReferenceToSceneAction,
   SaveMemoryAction,
   DeleteMemoryAction,
+  ComposioPublishAction,
+  ComposioActionAction,
 ]);
 
 export type ValidAction = z.infer<typeof ActionBlockSchema>;
