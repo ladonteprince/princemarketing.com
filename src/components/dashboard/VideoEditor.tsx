@@ -373,7 +373,7 @@ function SceneCard({
           title="Regenerate scene"
         >
           <RefreshCw size={11} strokeWidth={1.5} />
-          <span>Redo</span>
+          <span>Regenerate</span>
         </button>
 
         <div className="relative">
