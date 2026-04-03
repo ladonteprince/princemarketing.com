@@ -39,15 +39,15 @@ export function Shell({ children }: ShellProps) {
         />
       )}
 
-      {/* Sidebar: hidden on mobile unless toggled, always visible on md+ */}
-      <div
-        className={`
-          fixed inset-y-0 left-0 z-50 transition-transform duration-[var(--transition-page)] md:translate-x-0
-          ${mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"}
-        `}
-      >
-        <Sidebar onCloseMobile={() => setMobileSidebarOpen(false)} />
+      {/* Sidebar: always visible on md+, toggle on mobile */}
+      <div className="hidden md:block fixed inset-y-0 left-0 z-50">
+        <Sidebar />
       </div>
+      {mobileSidebarOpen && (
+        <div className="fixed inset-y-0 left-0 z-50 md:hidden">
+          <Sidebar onCloseMobile={() => setMobileSidebarOpen(false)} />
+        </div>
+      )}
 
       {/* Main content area */}
       <main className="min-w-0 flex-1 md:ml-[var(--sidebar-width)] transition-[margin] duration-[var(--transition-page)]">
