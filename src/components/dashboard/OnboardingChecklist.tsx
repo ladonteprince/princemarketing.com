@@ -91,8 +91,9 @@ export function OnboardingChecklist({ nodes }: OnboardingChecklistProps) {
           setCollapsed(false);
         }}
         className="
+          hidden md:flex
           fixed bottom-20 left-4 z-40
-          flex items-center gap-2 rounded-full
+          items-center gap-2 rounded-full
           bg-royal/20 border border-royal/30
           px-3 py-1.5 text-xs text-royal
           hover:bg-royal/30 hover:border-royal/50
@@ -108,6 +109,7 @@ export function OnboardingChecklist({ nodes }: OnboardingChecklistProps) {
 
   return (
     <div className="
+      hidden md:block
       fixed bottom-20 left-4 z-50
       w-72 rounded-xl border border-smoke
       bg-graphite/95 backdrop-blur-md

@@ -51,21 +51,21 @@ export function Shell({ children }: ShellProps) {
 
       {/* Main content area */}
       <main className="min-w-0 flex-1 md:ml-[var(--sidebar-width)] transition-[margin] duration-[var(--transition-page)]">
-        {/* Mobile top bar with hamburger */}
-        <div className="flex h-14 items-center border-b border-smoke px-4 md:hidden">
-          <button
-            onClick={() => setMobileSidebarOpen(true)}
-            className="
-              flex h-11 w-11 items-center justify-center rounded-lg
-              text-ash hover:text-cloud hover:bg-slate
-              transition-colors duration-[var(--transition-micro)]
-              cursor-pointer
-            "
-            aria-label="Open sidebar"
-          >
-            <Menu size={22} strokeWidth={1.5} />
-          </button>
-          <div className="ml-3 flex items-center gap-2">
+        {/* Mobile top bar with hamburger + chat button */}
+        <div className="flex h-14 items-center justify-between border-b border-smoke px-4 md:hidden">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setMobileSidebarOpen(true)}
+              className="
+                flex h-10 w-10 items-center justify-center rounded-lg
+                text-ash hover:text-cloud hover:bg-slate
+                transition-colors duration-[var(--transition-micro)]
+                cursor-pointer
+              "
+              aria-label="Open sidebar"
+            >
+              <Menu size={22} strokeWidth={1.5} />
+            </button>
             <img
               src="/logos/pm-icon.svg"
               alt="PrinceMarketing"
@@ -75,6 +75,15 @@ export function Shell({ children }: ShellProps) {
               PrinceMarketing
             </span>
           </div>
+          {/* Chat button on right */}
+          {!isWorkspace && (
+            <button
+              onClick={() => setChatOpen(true)}
+              className="flex h-10 w-10 items-center justify-center rounded-lg text-royal hover:bg-royal/10 transition-colors cursor-pointer"
+            >
+              <MessageSquare size={20} strokeWidth={1.5} />
+            </button>
+          )}
         </div>
         {children}
       </main>
@@ -99,17 +108,8 @@ export function Shell({ children }: ShellProps) {
             </ErrorBoundary>
           </div>
 
-          {/* Mobile: floating button + full-screen overlay */}
+          {/* Mobile: full-screen chat overlay (no floating button) */}
           <div className="lg:hidden">
-            {!chatOpen && (
-              <button
-                onClick={() => setChatOpen(true)}
-                className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-royal text-white shadow-lg shadow-royal/30 hover:bg-royal/80 transition-all cursor-pointer"
-                title="Open AI Strategist"
-              >
-                <MessageSquare size={22} strokeWidth={1.5} />
-              </button>
-            )}
             {chatOpen && (
               <div className="fixed inset-0 z-50 bg-graphite">
                 <ErrorBoundary>
