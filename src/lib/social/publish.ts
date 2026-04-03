@@ -40,7 +40,7 @@ async function pollInstagramContainer(
 }
 
 // Facebook: Graph API v19.0
-async function publishToFacebook({ content, mediaUrl, mediaUrls, mediaType, accessToken, scheduled }: PublishParams): Promise<PublishResult> {
+async function publishToFacebook({ content, mediaUrl, mediaUrls, mediaType, accessToken, pageId, scheduled }: PublishParams): Promise<PublishResult> {
   try {
     // First get page ID and token
     const pagesRes = await fetch(
