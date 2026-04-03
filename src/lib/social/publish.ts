@@ -166,7 +166,9 @@ async function publishToInstagram({ content, mediaUrl, mediaUrls, mediaType, acc
       `https://graph.facebook.com/v19.0/me/accounts?fields=instagram_business_account&access_token=${accessToken}`,
     );
     const pagesData = await pagesRes.json();
-    const igAccountId = pagesData.data?.[0]?.instagram_business_account?.id;
+    // Search ALL pages for an Instagram business account, not just the first one
+    const pageWithIg = (pagesData.data ?? []).find((p: any) => p.instagram_business_account?.id);
+    const igAccountId = pageWithIg?.instagram_business_account?.id;
 
     if (!igAccountId) {
       return { success: false, error: "No Instagram business account linked. Link one in Facebook Page settings." };

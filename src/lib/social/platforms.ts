@@ -52,7 +52,9 @@ export const PLATFORMS = {
     // registered (e.g. ladonteprince.com). This cannot be changed programmatically.
     authUrl: "https://www.tiktok.com/v2/auth/authorize/",
     tokenUrl: "https://open.tiktokapis.com/v2/oauth/token/",
-    scopes: ["user.info.basic", "video.publish", "video.list"],
+    scopes: ["user.info.basic"],
+    // NOTE: video.publish and video.list scopes need TikTok app review approval
+    // Once approved, add them back: ["user.info.basic", "video.publish", "video.list"]
     icon: "Music2",
     envPrefix: "TIKTOK",
     dbType: "TIKTOK" as const,
