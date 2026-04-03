@@ -8,7 +8,7 @@ export const PLATFORMS = {
     // that specifies which permissions are allowed. Config created in Meta Developer Console.
     authUrl: "https://www.facebook.com/v19.0/dialog/oauth",
     tokenUrl: "https://graph.facebook.com/v19.0/oauth/access_token",
-    scopes: ["instagram_manage_comments", "pages_show_list", "pages_read_engagement"],
+    scopes: ["instagram_basic", "instagram_content_publish", "instagram_manage_comments", "pages_show_list", "pages_read_engagement", "pages_manage_posts"],
     configId: "940418525511002",
     icon: "Instagram",
     envPrefix: "INSTAGRAM",
@@ -18,7 +18,7 @@ export const PLATFORMS = {
     name: "Facebook",
     authUrl: "https://www.facebook.com/v19.0/dialog/oauth",
     tokenUrl: "https://graph.facebook.com/v19.0/oauth/access_token",
-    scopes: ["pages_manage_posts", "pages_read_engagement"],
+    scopes: ["pages_manage_posts", "pages_read_engagement", "pages_show_list", "instagram_basic", "instagram_content_publish", "read_insights", "ads_read"],
     icon: "Facebook",
     envPrefix: "FACEBOOK",
     dbType: "FACEBOOK" as const,
