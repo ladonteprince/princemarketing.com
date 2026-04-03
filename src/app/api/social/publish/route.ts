@@ -77,8 +77,8 @@ export async function POST(request: Request) {
       let connected = connectedPlatforms.find((p) => p.type === dbType);
 
       // Instagram uses Facebook's token (requires instagram_basic + instagram_content_publish scopes)
-      if (platformKey === "instagram" && fbPlatform?.accessToken) {
-        connected = connected ? { ...connected, accessToken: fbPlatform.accessToken } : null;
+      if (platformKey === "instagram" && fbPlatform?.accessToken && connected) {
+        connected = { ...connected, accessToken: fbPlatform.accessToken };
       }
 
       if (!connected || !connected.accessToken) {

@@ -108,6 +108,7 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
               <li key={item.href} className="relative group">
                 <Link
                   href={item.href}
+                  onClick={() => onCloseMobile?.()}
                   className={`
                     flex items-center gap-3 rounded-lg px-3 py-2.5
                     text-sm font-medium
@@ -153,6 +154,7 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
               <li key={item.href} className="relative group">
                 <Link
                   href={item.href}
+                  onClick={() => onCloseMobile?.()}
                   className={`
                     flex items-center gap-3 rounded-lg px-3 py-2.5
                     text-sm font-medium
