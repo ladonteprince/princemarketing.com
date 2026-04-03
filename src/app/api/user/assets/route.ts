@@ -67,9 +67,26 @@ export async function GET(request: NextRequest) {
       createdAt: g.createdAt ?? g.created_at ?? new Date().toISOString(),
     }));
 
+    // Filter out internal platform assets (landing page images, etc.)
+    const internalPhrases = [
+      "dark-themed SaaS",
+      "sleek dark-themed",
+      "marketing dashboard",
+      "glassmorphism UI",
+      "product screenshot style",
+      "SaaS product showcase",
+    ];
+
+    const userAssets = assets.filter((a) => {
+      const promptLower = a.prompt.toLowerCase();
+      return !internalPhrases.some((phrase) =>
+        promptLower.includes(phrase.toLowerCase())
+      );
+    });
+
     return NextResponse.json({
-      assets,
-      total,
+      assets: userAssets,
+      total: userAssets.length,
     });
   } catch (error) {
     console.error("[UserAssets] Failed to fetch generations:", error);

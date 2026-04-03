@@ -538,13 +538,16 @@ function AssetDrawer({
   open,
   onClose,
   onImport,
+  project,
 }: {
   open: boolean;
   onClose: () => void;
   onImport: (asset: AssetFromAPI) => void;
+  project?: VideoProject;
 }) {
   const [assets, setAssets] = useState<AssetFromAPI[]>([]);
   const [loading, setLoading] = useState(false);
+  const [drawerFilter, setDrawerFilter] = useState<"all" | "image" | "video">("all");
 
   useEffect(() => {
     if (!open) return;
@@ -594,6 +597,21 @@ function AssetDrawer({
           </button>
         </div>
 
+        {/* Filter Tabs */}
+        <div className="flex items-center gap-1 px-4 pb-2 pt-2">
+          {(["all", "image", "video"] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => setDrawerFilter(f)}
+              className={`rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors cursor-pointer ${
+                drawerFilter === f ? "bg-royal/20 text-royal" : "text-ash hover:text-cloud"
+              }`}
+            >
+              {f === "all" ? "All" : f === "image" ? "Images" : "Videos"}
+            </button>
+          ))}
+        </div>
+
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4">
           {loading ? (
@@ -608,7 +626,7 @@ function AssetDrawer({
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3">
-              {assets.map((asset) => (
+              {(drawerFilter === "all" ? assets : assets.filter((a) => a.type === drawerFilter)).map((asset) => (
                 <div
                   key={asset.id}
                   className="group/asset flex flex-col overflow-hidden rounded-xl border border-smoke/60 bg-slate/30 transition-all hover:border-royal/40 hover:shadow-lg hover:shadow-void/30"
@@ -647,17 +665,25 @@ function AssetDrawer({
                     <p className="line-clamp-2 text-[10px] leading-tight text-ash">
                       {asset.prompt || "Untitled asset"}
                     </p>
-                    <button
-                      onClick={() => onImport(asset)}
-                      className="
-                        mt-auto flex items-center justify-center gap-1 rounded-lg
-                        bg-royal/10 px-2 py-1.5 text-[10px] font-semibold text-royal
-                        hover:bg-royal hover:text-white transition-all duration-200 cursor-pointer
-                      "
-                    >
-                      <Plus size={12} />
-                      Import
-                    </button>
+                    {project?.referenceImages?.some(
+                      (r) => r.url === asset.url || r.url.includes(encodeURIComponent(asset.url))
+                    ) ? (
+                      <span className="mt-auto flex items-center justify-center gap-1 rounded-lg bg-emerald-500/10 px-2 py-1.5 text-[10px] font-semibold text-emerald-400">
+                        ✓ Reference
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => onImport(asset)}
+                        className="
+                          mt-auto flex items-center justify-center gap-1 rounded-lg
+                          bg-royal/10 px-2 py-1.5 text-[10px] font-semibold text-royal
+                          hover:bg-royal hover:text-white transition-all duration-200 cursor-pointer
+                        "
+                      >
+                        <Plus size={12} />
+                        Import
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1819,6 +1845,7 @@ export function VideoEditor({
       <AssetDrawer
         open={showAssetDrawer}
         onClose={() => setShowAssetDrawer(false)}
+        project={project}
         onImport={(asset: { id: string; type: string; url: string; prompt: string }) => {
           const newScene: VideoScene = {
             id: crypto.randomUUID(),
