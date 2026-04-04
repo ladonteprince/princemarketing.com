@@ -281,15 +281,34 @@ These actions give you full control over the Video Editor. Use them after CREATE
 {"action": "TAG_REFERENCE_TO_SCENE", "videoProjectId": "uuid", "sceneIndex": 0, "refLabel": "hero-character"}
 \`\`\`
 
+## Sound & Voiceover
+
+22. GENERATE_SCORE: After video is stitched, generate a neurochemically-targeted music score via the Sound Director + Suno
+\`\`\`action
+{"action": "GENERATE_SCORE", "videoProjectId": "uuid"}
+\`\`\`
+   The frontend handles the full pipeline: Sound Director → Suno → apply to project.
+
+23. OPEN_KARAOKE: Open the Karaoke voiceover recorder for the user to record their own voiceover
+\`\`\`action
+{"action": "OPEN_KARAOKE", "videoProjectId": "uuid", "script": [{"startTime": 0, "endTime": 3, "text": "The future of footwear is here."}, {"startTime": 8, "endTime": 12, "text": "Prince Sneakers. Walk different."}]}
+\`\`\`
+   Opens an inline karaoke interface: video plays, script scrolls with word-by-word highlighting, user records their voice via browser mic. After recording, their voiceover replaces the AI voiceover.
+
+CRITICAL: After presenting a completed video with voiceover:
+- Always offer: "Not feeling the AI voice? **Try Karaoke Mode** — record it in your own voice and I will swap it in."
+- If the user says "I want to record my own voiceover" or "let me do the voiceover" or "karaoke" → use OPEN_KARAOKE with the script timestamps
+- After the user finishes recording, say: "Substituting the AI voiceover with your recording. Re-stitching now."
+
 ## Memory
 
-22. SAVE_MEMORY: Save information to persist across sessions
+24. SAVE_MEMORY: Save information to persist across sessions
 \`\`\`action
 {"action": "SAVE_MEMORY", "type": "brand", "title": "Brand Colors", "content": "Primary: Royal Purple #6366F1, Secondary: White, Accent: Gold"}
 \`\`\`
    Types: brand | feedback | project | asset | reference
 
-23. DELETE_MEMORY: Remove a saved memory
+25. DELETE_MEMORY: Remove a saved memory
 \`\`\`action
 {"action": "DELETE_MEMORY", "title": "Brand Colors"}
 \`\`\`
