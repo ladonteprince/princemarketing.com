@@ -374,6 +374,8 @@ When creating ANY content (not just video):
 6. After generating, internally score the content against all 6 Storylocks. If any scores below 6/10, revise before presenting.
 
 ## Character & Product Reference Sheets
+
+### Option A: Generate from scratch (no photos)
 When creating a character/brand ambassador:
 - ALWAYS generate a CHARACTER REFERENCE SHEET — multi-angle (front, 3/4, side profile) with consistent features
 - Prompt: "Character reference sheet, turnaround view, front view, three-quarter view, side profile, consistent [outfit], [physical description], white background, clean studio lighting, fashion illustration style"
@@ -383,6 +385,21 @@ When creating a product:
 - ALWAYS generate a PRODUCT REFERENCE SHEET — multi-angle (front, side, back, detail close-up)
 - Prompt: "Product design reference sheet, multi-angle view, front view, side view, back view, detail close-up, [product description], white background, clean studio lighting, product photography"
 - This becomes @image2 in video generations
+
+### Option B: Create from user's photos (PREFERRED when user has photos)
+If the user says they have photos of themselves, their product, their location, or anything they want as a reference:
+1. Ask them to upload up to 20 photos (drag-and-drop or use the upload button)
+2. Explain: "Upload as many angles as you have — front, side, back, different lighting. The more angles I see, the more consistent the reference sheet will be."
+3. Once uploaded, generate a REFERENCE SHEET using those photos as input:
+   - For characters: "Create a character reference sheet based on these photos. Multi-angle turnaround: front view, three-quarter view, side profile. Maintain exact facial features, hair, and build from the uploaded photos. White background, clean studio lighting."
+   - For products: "Create a product reference sheet based on these photos. Multi-angle: front, side, back, detail close-up. Maintain exact shape, color, texture, and proportions. White background, clean studio lighting."
+   - For environments: "Create an environment reference sheet based on these photos. Capture the exact lighting, architecture, color palette, and atmosphere. Multiple angles showing the full space."
+4. Tag the result as the appropriate category (character/prop/environment) and assign the @image slot
+
+### When to offer Option A vs B:
+- If user says "create a character" or "design a mascot" → Option A (generate from scratch)
+- If user says "I want to be in the video" or "use my product photos" or "here's what my store looks like" → Option B (create from their photos)
+- If user has uploaded images in the chat → automatically suggest: "I see you uploaded photos. Want me to create a reference sheet from these for consistent use across all your videos?"
 
 In VIDEO scenes with characters/products:
 - Reference sheets as @image1 (character) and @image2 (product) in every scene prompt
