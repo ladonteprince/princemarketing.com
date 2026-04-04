@@ -25,6 +25,7 @@ import {
   Sparkles,
   FolderOpen,
   Download,
+  Mic,
 } from "lucide-react";
 import type {
   VideoScene,
@@ -709,6 +710,8 @@ export function VideoEditor({
   const [insertIndex, setInsertIndex] = useState<number | null>(null);
   const [stitching, setStitching] = useState(false);
   const [stitchedUrl, setStitchedUrl] = useState<string | null>(null);
+  const [showKaraoke, setShowKaraoke] = useState(false);
+  const [generatingScore, setGeneratingScore] = useState(false);
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const sourceImageInputRef = useRef<HTMLInputElement>(null);
@@ -1949,6 +1952,108 @@ export function VideoEditor({
                   className="flex items-center gap-1.5 rounded-lg bg-royal px-3 py-1.5 text-xs font-medium text-white hover:bg-royal/80 transition-colors cursor-pointer"
                 >
                   <Download size={12} /> Download
+                </button>
+                <button
+                  onClick={async () => {
+                    if (generatingScore) return;
+                    setGeneratingScore(true);
+                    try {
+                      // Build scene timing from the project
+                      let currentTime = 0;
+                      const sceneTiming = project.scenes
+                        .filter((s) => s.videoUrl && s.status === "ready")
+                        .map((s, i, arr) => {
+                          const duration = s.trimEnd - s.trimStart;
+                          const startTime = currentTime;
+                          currentTime += duration;
+                          const totalScenes = arr.length;
+                          const attentionRole = i === 0
+                            ? "stimulation"
+                            : i === totalScenes - 1
+                              ? "validation"
+                              : i < totalScenes / 2
+                                ? "captivation"
+                                : "anticipation";
+                          return {
+                            prompt: s.prompt,
+                            startTime,
+                            endTime: currentTime,
+                            attentionRole,
+                          };
+                        });
+
+                      // Call Sound Director
+                      const soundRes = await fetch("/api/proxy/direct-sound", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          videoUrl: stitchedUrl,
+                          scenes: sceneTiming,
+                          totalDuration: currentTime,
+                          targetEmotion: "engagement",
+                        }),
+                      });
+
+                      if (soundRes.ok) {
+                        const soundData = await soundRes.json();
+                        const sunoPrompt = soundData?.data?.sunoPrompt ?? soundData?.sunoPrompt;
+                        const sunoDuration = soundData?.data?.sunoDuration ?? soundData?.sunoDuration ?? Math.ceil(currentTime);
+
+                        if (sunoPrompt) {
+                          // Generate music via Suno
+                          const musicRes = await fetch("/api/generate/music", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              prompt: sunoPrompt,
+                              duration: sunoDuration,
+                              style: soundData?.data?.sunoStyle ?? "cinematic",
+                            }),
+                          });
+
+                          if (musicRes.ok) {
+                            const musicData = await musicRes.json();
+                            if (musicData.generationId) {
+                              // Poll for completion
+                              const pollUrl = musicData.pollUrl ?? `/api/stream/${musicData.generationId}`;
+                              let attempts = 0;
+                              while (attempts < 120) {
+                                attempts++;
+                                await new Promise((r) => setTimeout(r, 1000));
+                                try {
+                                  const pollRes = await fetch(pollUrl);
+                                  if (!pollRes.ok) continue;
+                                  const pollData = await pollRes.json();
+                                  const status = pollData.status ?? pollData.data?.status;
+                                  const resultUrl = pollData.resultUrl ?? pollData.data?.resultUrl;
+                                  if ((status === "passed" || status === "completed") && resultUrl) {
+                                    updateProject({ audioUrl: resultUrl });
+                                    break;
+                                  }
+                                  if (status === "failed") break;
+                                } catch { /* retry */ }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    } catch {
+                      // Sound generation failed silently
+                    } finally {
+                      setGeneratingScore(false);
+                    }
+                  }}
+                  disabled={generatingScore}
+                  className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {generatingScore ? <Loader2 size={12} className="animate-spin" /> : <Music size={12} />}
+                  {generatingScore ? "Scoring..." : "Generate Score"}
+                </button>
+                <button
+                  onClick={() => { setShowKaraoke(true); setStitchedUrl(null); }}
+                  className="flex items-center gap-1.5 rounded-lg bg-coral/80 px-3 py-1.5 text-xs font-medium text-white hover:bg-coral transition-colors cursor-pointer"
+                >
+                  <Mic size={12} /> Record Voiceover
                 </button>
                 <button onClick={() => window.open(stitchedUrl, "_blank")} className="flex items-center gap-1.5 rounded-lg bg-slate px-3 py-1.5 text-xs font-medium text-cloud hover:bg-smoke transition-colors cursor-pointer">
                   Open in Tab
