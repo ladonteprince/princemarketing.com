@@ -378,7 +378,7 @@ export default function AssetsPage() {
   }, [assets]);
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
+    <div className="flex h-full flex-col overflow-hidden">
       {/* Header */}
       <div className="shrink-0 border-b border-smoke px-6 py-5">
         <h1 className="text-lg font-semibold text-cloud">Assets</h1>

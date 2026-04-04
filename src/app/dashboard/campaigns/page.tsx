@@ -62,13 +62,13 @@ export default function CampaignsPage() {
   const activeCampaigns = campaigns.filter((c) => c.status === "ACTIVE");
 
   return (
-    <div className="flex flex-col">
+    <div className="flex h-full flex-col overflow-hidden">
       <Header
         title="Campaigns"
         subtitle="Organize your marketing around clear goals"
       />
 
-      <div className="flex-1 px-6 py-6">
+      <div className="flex-1 overflow-y-auto px-6 py-6">
         {/* Actions bar */}
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">

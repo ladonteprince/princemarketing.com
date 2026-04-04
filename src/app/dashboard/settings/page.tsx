@@ -263,10 +263,10 @@ function SettingsPageContent() {
   const tierInfo = TIER_LABELS[profile?.tier ?? "STARTER"] ?? TIER_LABELS.STARTER;
 
   return (
-    <div className="flex flex-col">
+    <div className="flex h-full flex-col overflow-hidden">
       <Header title="Settings" subtitle="Manage your account and connections" />
 
-      <div className="flex-1 px-6 py-6">
+      <div className="flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-2xl space-y-6">
           {/* Status messages */}
           {error && (

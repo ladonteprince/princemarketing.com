@@ -82,13 +82,13 @@ export default function AnalyticsPage() {
     : [];
 
   return (
-    <div className="flex flex-col">
+    <div className="flex h-full flex-col overflow-hidden">
       <Header
         title="Analytics"
         subtitle="Track what is working and optimize your strategy"
       />
 
-      <div className="flex-1 px-6 py-8">
+      <div className="flex-1 overflow-y-auto px-6 py-8">
         {loading ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {Array.from({ length: 5 }).map((_, i) => (
