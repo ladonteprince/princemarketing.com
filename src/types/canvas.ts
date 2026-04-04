@@ -25,11 +25,19 @@ export interface VideoSceneVersion {
   createdAt: string;
 }
 
+export interface ReferenceDimensions {
+  height?: string;  // e.g. "6'1\"" or "12 inches"
+  width?: string;   // e.g. "4 inches"
+  length?: string;  // e.g. "11 inches"
+  notes?: string;   // e.g. "slim build" or "matte black finish"
+}
+
 export interface ReferenceImage {
   id: string;
   url: string;
   label: string;
   category: "character" | "prop" | "scene";
+  dimensions?: ReferenceDimensions;
 }
 
 export interface VideoScene {

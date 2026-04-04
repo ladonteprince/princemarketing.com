@@ -26,6 +26,7 @@ import {
   FolderOpen,
   Download,
   Mic,
+  Ruler,
 } from "lucide-react";
 import type {
   VideoScene,
@@ -768,6 +769,25 @@ export function VideoEditor({
       }
     });
 
+    // WHY: Inject dimension metadata from tagged references into the prompt.
+    // This gives the AI proportional accuracy: "sneaker is 12 inches long,
+    // model is 6'1" — so the sneaker should be about hand-length when held."
+    const dimensionHints = taggedRefs
+      .filter((ref) => ref.dimensions && (ref.dimensions.height || ref.dimensions.width || ref.dimensions.notes))
+      .map((ref) => {
+        const parts: string[] = [];
+        if (ref.dimensions?.height) parts.push(`height: ${ref.dimensions.height}`);
+        if (ref.dimensions?.width) parts.push(`width: ${ref.dimensions.width}`);
+        if (ref.dimensions?.length) parts.push(`length: ${ref.dimensions.length}`);
+        if (ref.dimensions?.notes) parts.push(ref.dimensions.notes);
+        const globalIdx = refs.findIndex(r => r.id === ref.id) + 1;
+        return `@image${globalIdx} (${ref.label || "ref"}): ${parts.join(", ")}`;
+      });
+
+    if (dimensionHints.length > 0) {
+      processedPrompt += `. Scale reference: ${dimensionHints.join("; ")}. Maintain proportionally accurate sizing between all subjects.`;
+    }
+
     // Auto-detect mode from scene content
     let autoMode: VideoSceneMode = "t2v";
     if (scene.sourceImageUrl) autoMode = "i2v";
@@ -1257,6 +1277,21 @@ export function VideoEditor({
     });
   }
 
+  // WHY: Optional dimensions metadata for proportional accuracy.
+  // Users can add height/width/length/notes to any reference image.
+  // These get injected into scene prompts so the AI maintains scale.
+  const [editingDimensions, setEditingDimensions] = useState<string | null>(null);
+
+  function handleUpdateRefDimensions(refId: string, field: string, value: string) {
+    updateProject({
+      referenceImages: (project.referenceImages ?? []).map((r) =>
+        r.id === refId
+          ? { ...r, dimensions: { ...(r.dimensions ?? {}), [field]: value } }
+          : r
+      ),
+    });
+  }
+
   /* ─ Derived ─ */
 
   const totalDuration = project.scenes.reduce(
@@ -1622,6 +1657,24 @@ export function VideoEditor({
                       className="absolute bottom-0 w-full bg-void/80 backdrop-blur-sm text-[9px] text-center py-0.5 text-cloud placeholder:text-ash/50 border-0 outline-none"
                       onClick={(e) => e.stopPropagation()}
                     />
+                    {/* Ruler icon — toggle dimensions popover */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditingDimensions(editingDimensions === img.id ? null : img.id); }}
+                      className={`absolute bottom-5 right-1 flex h-4 w-4 items-center justify-center rounded-full transition-all cursor-pointer ${
+                        img.dimensions && (img.dimensions.height || img.dimensions.width) ? "bg-royal/60 text-white opacity-100" : "bg-void/70 text-ash opacity-0 group-hover/ref:opacity-100 hover:text-royal"
+                      }`}
+                      title="Add dimensions (optional)"
+                    >
+                      <Ruler size={8} />
+                    </button>
+                    {editingDimensions === img.id && (
+                      <div className="absolute top-full left-0 z-30 mt-1 w-44 rounded-lg border border-smoke bg-graphite p-2 shadow-xl" onClick={(e) => e.stopPropagation()}>
+                        <div className="text-[8px] uppercase tracking-wider text-ash/50 font-medium mb-1">Dimensions (optional)</div>
+                        <input placeholder="Height (e.g. 6'1&quot;)" value={img.dimensions?.height ?? ""} onChange={(e) => handleUpdateRefDimensions(img.id, "height", e.target.value)} className="w-full rounded bg-slate/50 px-1.5 py-1 text-[10px] text-cloud placeholder:text-ash/40 mb-1 border-0 outline-none" />
+                        <input placeholder="Width (e.g. 4 in)" value={img.dimensions?.width ?? ""} onChange={(e) => handleUpdateRefDimensions(img.id, "width", e.target.value)} className="w-full rounded bg-slate/50 px-1.5 py-1 text-[10px] text-cloud placeholder:text-ash/40 mb-1 border-0 outline-none" />
+                        <input placeholder="Notes (e.g. slim build)" value={img.dimensions?.notes ?? ""} onChange={(e) => handleUpdateRefDimensions(img.id, "notes", e.target.value)} className="w-full rounded bg-slate/50 px-1.5 py-1 text-[10px] text-cloud placeholder:text-ash/40 border-0 outline-none" />
+                      </div>
+                    )}
                   </div>
                 );
               });
@@ -1727,6 +1780,24 @@ export function VideoEditor({
                       className="absolute bottom-0 w-full bg-void/80 backdrop-blur-sm text-[9px] text-center py-0.5 text-cloud placeholder:text-ash/50 border-0 outline-none"
                       onClick={(e) => e.stopPropagation()}
                     />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditingDimensions(editingDimensions === img.id ? null : img.id); }}
+                      className={`absolute bottom-5 right-1 flex h-4 w-4 items-center justify-center rounded-full transition-all cursor-pointer ${
+                        img.dimensions && (img.dimensions.height || img.dimensions.width || img.dimensions.length) ? "bg-royal/60 text-white opacity-100" : "bg-void/70 text-ash opacity-0 group-hover/ref:opacity-100 hover:text-royal"
+                      }`}
+                      title="Add dimensions (optional)"
+                    >
+                      <Ruler size={8} />
+                    </button>
+                    {editingDimensions === img.id && (
+                      <div className="absolute top-full left-0 z-30 mt-1 w-44 rounded-lg border border-smoke bg-graphite p-2 shadow-xl" onClick={(e) => e.stopPropagation()}>
+                        <div className="text-[8px] uppercase tracking-wider text-ash/50 font-medium mb-1">Dimensions (optional)</div>
+                        <input placeholder="Height (e.g. 12 in)" value={img.dimensions?.height ?? ""} onChange={(e) => handleUpdateRefDimensions(img.id, "height", e.target.value)} className="w-full rounded bg-slate/50 px-1.5 py-1 text-[10px] text-cloud placeholder:text-ash/40 mb-1 border-0 outline-none" />
+                        <input placeholder="Width (e.g. 4 in)" value={img.dimensions?.width ?? ""} onChange={(e) => handleUpdateRefDimensions(img.id, "width", e.target.value)} className="w-full rounded bg-slate/50 px-1.5 py-1 text-[10px] text-cloud placeholder:text-ash/40 mb-1 border-0 outline-none" />
+                        <input placeholder="Length (e.g. 11 in)" value={img.dimensions?.length ?? ""} onChange={(e) => handleUpdateRefDimensions(img.id, "length", e.target.value)} className="w-full rounded bg-slate/50 px-1.5 py-1 text-[10px] text-cloud placeholder:text-ash/40 mb-1 border-0 outline-none" />
+                        <input placeholder="Notes (e.g. matte black)" value={img.dimensions?.notes ?? ""} onChange={(e) => handleUpdateRefDimensions(img.id, "notes", e.target.value)} className="w-full rounded bg-slate/50 px-1.5 py-1 text-[10px] text-cloud placeholder:text-ash/40 border-0 outline-none" />
+                      </div>
+                    )}
                   </div>
                 );
               });
@@ -1832,6 +1903,22 @@ export function VideoEditor({
                       className="absolute bottom-0 w-full bg-void/80 backdrop-blur-sm text-[9px] text-center py-0.5 text-cloud placeholder:text-ash/50 border-0 outline-none"
                       onClick={(e) => e.stopPropagation()}
                     />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditingDimensions(editingDimensions === img.id ? null : img.id); }}
+                      className={`absolute bottom-5 right-1 flex h-4 w-4 items-center justify-center rounded-full transition-all cursor-pointer ${
+                        img.dimensions && img.dimensions.notes ? "bg-royal/60 text-white opacity-100" : "bg-void/70 text-ash opacity-0 group-hover/ref:opacity-100 hover:text-royal"
+                      }`}
+                      title="Add details (optional)"
+                    >
+                      <Ruler size={8} />
+                    </button>
+                    {editingDimensions === img.id && (
+                      <div className="absolute top-full left-0 z-30 mt-1 w-44 rounded-lg border border-smoke bg-graphite p-2 shadow-xl" onClick={(e) => e.stopPropagation()}>
+                        <div className="text-[8px] uppercase tracking-wider text-ash/50 font-medium mb-1">Details (optional)</div>
+                        <input placeholder="Size (e.g. 30x20 ft)" value={img.dimensions?.height ?? ""} onChange={(e) => handleUpdateRefDimensions(img.id, "height", e.target.value)} className="w-full rounded bg-slate/50 px-1.5 py-1 text-[10px] text-cloud placeholder:text-ash/40 mb-1 border-0 outline-none" />
+                        <input placeholder="Notes (e.g. warehouse, concrete)" value={img.dimensions?.notes ?? ""} onChange={(e) => handleUpdateRefDimensions(img.id, "notes", e.target.value)} className="w-full rounded bg-slate/50 px-1.5 py-1 text-[10px] text-cloud placeholder:text-ash/40 border-0 outline-none" />
+                      </div>
+                    )}
                   </div>
                 );
               });
