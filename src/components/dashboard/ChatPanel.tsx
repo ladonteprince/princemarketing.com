@@ -639,6 +639,35 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
   const [showMemories, setShowMemories] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // WHY: Fetch user assets for the @ mention popup in ChatInput.
+  // Users type @Name to tag characters, props, environments inline in chat.
+  type MentionAsset = { id: string; name: string; url: string; type: "character" | "prop" | "environment" | "product" | "image" | "video"; thumbnail?: string };
+  const [mentionAssets, setMentionAssets] = useState<MentionAsset[]>([]);
+  useEffect(() => {
+    fetch("/api/user/assets?limit=30")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((data) => {
+        const raw = data?.assets ?? data ?? [];
+        if (Array.isArray(raw)) {
+          setMentionAssets(
+            raw.map((a: { id: string; url: string; type: string; name?: string; prompt?: string; category?: string }) => {
+              const proxyUrl = a.url?.startsWith("https://princemarketing.ai/")
+                ? `/api/proxy/image?url=${encodeURIComponent(a.url)}`
+                : a.url;
+              return {
+                id: a.id,
+                name: a.name || a.prompt?.slice(0, 30) || "Asset",
+                url: a.url,
+                type: (a.category as MentionAsset["type"]) || (a.type === "video" ? "video" : "image"),
+                thumbnail: proxyUrl,
+              };
+            }),
+          );
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Persist projects to localStorage
   useEffect(() => {
     localStorage.setItem("pm-projects", JSON.stringify(projects));
@@ -1260,11 +1289,12 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
         </span>
       </div>
 
-      {/* Input */}
+      {/* Input — assets prop powers the @ mention popup */}
       <ChatInput
         onSend={handleSend}
         disabled={isThinking}
-        placeholder="Tell me what to do..."
+        placeholder="Tell me what to do... (@ to tag assets)"
+        assets={mentionAssets}
       />
     </div>
   );
