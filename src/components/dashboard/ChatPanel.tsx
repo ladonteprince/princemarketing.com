@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { ChatInput } from "@/components/chat/ChatInput";
+import { InlineVideoSet } from "@/components/chat/InlineVideoCard";
 import { ThinkingDots } from "@/components/ui/ThinkingDots";
 import { Badge } from "@/components/ui/Badge";
 import {
@@ -34,6 +35,7 @@ type Message = {
   content: string;
   nodeRefs?: string[]; // IDs of nodes created by this message
   actionStatuses?: ActionStatus[];
+  videoProjectId?: string; // Links to a video project for inline rendering
 };
 
 type ActionStatus = {
@@ -101,7 +103,7 @@ async function executeAction(
   onCanvasAction: (action: CanvasAction) => void,
   nodes: ContentNode[],
   statusCallback?: (update: StatusUpdate) => void,
-): Promise<{ success: boolean; detail: string; nodeRef?: string }> {
+): Promise<{ success: boolean; detail: string; nodeRef?: string; videoProjectId?: string }> {
   switch (action.action) {
     case "CREATE_IMAGE": {
       try {
@@ -279,10 +281,11 @@ async function executeAction(
             success: completedCount > 0,
             detail: `${completedCount}/${scenes.length} scenes generated sequentially`,
             nodeRef: id,
+            videoProjectId,
           };
         }
 
-        return { success: true, detail: "Video project created", nodeRef: id };
+        return { success: true, detail: "Video project created", nodeRef: id, videoProjectId };
       } catch (err) {
         return { success: false, detail: err instanceof Error ? err.message : "Failed" };
       }
@@ -759,7 +762,7 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
           ),
         );
 
-        let result: { success: boolean; detail: string; nodeRef?: string };
+        let result: { success: boolean; detail: string; nodeRef?: string; videoProjectId?: string };
 
         // Handle SAVE_MEMORY and DELETE_MEMORY inline since they need access to setMemories
         if (agentActions[i].action === "SAVE_MEMORY") {
@@ -804,7 +807,13 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
         setMessages((prev) =>
           prev.map((m) =>
             m.id === messageId
-              ? { ...m, actionStatuses: [...statuses], nodeRefs: [...allNodeRefs] }
+              ? {
+                  ...m,
+                  actionStatuses: [...statuses],
+                  nodeRefs: [...allNodeRefs],
+                  // WHY: Attach videoProjectId so InlineVideoSet can render scenes inline
+                  ...(result.videoProjectId ? { videoProjectId: result.videoProjectId } : {}),
+                }
               : m,
           ),
         );
@@ -1227,8 +1236,8 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
                 </div>
               )}
 
-              {/* Node reference chips */}
-              {msg.nodeRefs && msg.nodeRefs.length > 0 && (
+              {/* Node reference chips (non-video) */}
+              {msg.nodeRefs && msg.nodeRefs.length > 0 && !msg.videoProjectId && (
                 <div className="mt-2 ml-11 flex flex-wrap gap-1.5">
                   {msg.nodeRefs.map((ref) => {
                     const node = nodes.find((n) => n.id === ref);
@@ -1252,6 +1261,64 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
                   })}
                 </div>
               )}
+
+              {/* WHY: Inline video cards — renders scene clips directly in the chat
+                  stream so users can preview, trim, regenerate, and approve without
+                  switching to the Video Editor. This is the chat-first production
+                  interface that most users will use. */}
+              {msg.videoProjectId && (() => {
+                const videoNode = nodes.find((n) => n.videoProjectId === msg.videoProjectId);
+                if (!videoNode) return null;
+                // Get scenes from localStorage video projects
+                const savedProjects = typeof window !== "undefined"
+                  ? localStorage.getItem("pm-video-projects")
+                  : null;
+                let projectScenes: Array<{
+                  id: string; prompt: string; videoUrl?: string; thumbnailUrl?: string;
+                  status: "draft" | "generating" | "ready" | "regenerating";
+                  duration: number; trimStart: number; trimEnd: number; score?: number;
+                }> = [];
+                if (savedProjects) {
+                  try {
+                    const entries: [string, { scenes: typeof projectScenes }][] = JSON.parse(savedProjects);
+                    const proj = entries.find(([id]) => id === msg.videoProjectId);
+                    if (proj) projectScenes = proj[1].scenes;
+                  } catch { /* ignore */ }
+                }
+                if (projectScenes.length === 0) return null;
+
+                const sceneCount = projectScenes.length;
+                const attentionRoles = projectScenes.map((_, i) =>
+                  i === 0 ? "stimulation"
+                    : i === sceneCount - 1 ? "validation"
+                    : i < sceneCount / 2 ? "captivation"
+                    : "anticipation"
+                );
+
+                return (
+                  <InlineVideoSet
+                    scenes={projectScenes.map((s, i) => ({
+                      ...s,
+                      sceneIndex: i,
+                      attentionRole: attentionRoles[i],
+                    }))}
+                    totalScenes={sceneCount}
+                    projectTitle={videoNode.title}
+                    onRegenerate={(sceneId) => {
+                      onCanvasAction({ type: "open-video-editor", videoProjectId: msg.videoProjectId! });
+                    }}
+                    onTrimChange={(sceneId, start, end) => {
+                      // Trim updates go through the VideoEditor's project state
+                    }}
+                    onStitch={() => {
+                      onCanvasAction({ type: "stitch-video", videoProjectId: msg.videoProjectId! });
+                    }}
+                    onGenerateScore={() => {
+                      // Sound Director pipeline — handled by the stitch preview
+                    }}
+                  />
+                );
+              })()}
             </div>
           ))}
 
