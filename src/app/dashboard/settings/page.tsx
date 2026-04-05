@@ -173,9 +173,16 @@ function SettingsPageContent() {
               const { platformAccounts: pa } = await accountsRes.json();
               const map: PlatformAccountsMap = {};
               for (const entry of pa) {
+                // WHY: The API returns accounts[0] as the default selected ID,
+                // but the user may have saved a different selection in localStorage.
+                // localStorage is the source of truth for the active page selection.
+                const savedId = localStorage.getItem(`pm-active-page-${entry.platform}`);
+                const validSavedId = savedId && entry.accounts.some((a: PlatformAccount) => a.id === savedId)
+                  ? savedId
+                  : entry.selectedAccountId;
                 map[entry.platform] = {
                   accounts: entry.accounts,
-                  selectedAccountId: entry.selectedAccountId,
+                  selectedAccountId: validSavedId,
                 };
               }
               setPlatformAccounts(map);
@@ -412,7 +419,7 @@ function SettingsPageContent() {
                         </label>
                         <select
                           className="w-full text-xs bg-slate border border-smoke rounded px-2 py-1.5 text-ash focus:border-royal focus:outline-none"
-                          defaultValue={accountData.selectedAccountId ?? ""}
+                          value={accountData.selectedAccountId ?? ""}
                           onChange={(e) => {
                             const selectedId = e.target.value;
                             // Update local state immediately
