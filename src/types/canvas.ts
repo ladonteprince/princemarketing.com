@@ -59,6 +59,12 @@ export interface VideoScene {
   referenceImageIds: string[]; // IDs referencing project-level reference images
   versions: VideoSceneVersion[];
   score?: number;
+  // WHY: Live progress for the inline video card. Updated by ChatPanel from
+  // SSE events emitted by the .ai backend during Seedance generation.
+  // progressStartedAt is used for ETA extrapolation when the percent stalls.
+  progress?: number; // 0-100
+  progressStage?: string; // human-readable stage label, e.g. "Composing scene"
+  progressStartedAt?: number; // Date.now() when generation started, for ETA calc
 }
 
 export interface VideoProject {

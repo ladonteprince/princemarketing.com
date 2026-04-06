@@ -230,6 +230,28 @@ async function executeAction(
               sceneIndex: i,
             });
 
+            // WHY: Set progressStartedAt + initial progress=0 in localStorage
+            // so InlineVideoCard's synthetic clock has a known reference point.
+            const sceneStartedAt = Date.now();
+            try {
+              const saved = localStorage.getItem("pm-video-projects");
+              if (saved) {
+                const entries: [string, { scenes: Array<{ progress?: number; progressStage?: string; progressStartedAt?: number; status?: string }> }][] = JSON.parse(saved);
+                const updated = entries.map(([id, proj]) => {
+                  if (id !== videoProjectId) return [id, proj] as const;
+                  const updatedScenes = proj.scenes.map((s, idx) =>
+                    idx === i
+                      ? { ...s, status: "generating", progress: 0, progressStage: "Submitting", progressStartedAt: sceneStartedAt }
+                      : s,
+                  );
+                  return [id, { ...proj, scenes: updatedScenes }] as const;
+                });
+                localStorage.setItem("pm-video-projects", JSON.stringify(updated));
+                // Trigger a storage event for the InlineVideoCard to re-render
+                window.dispatchEvent(new Event("pm-video-projects-update"));
+              }
+            } catch { /* ignore */ }
+
             const videoMode = action.mode
               ?? (action.sourceImage ? "i2v" : undefined)
               ?? (action.sourceVideo ? "extend" : undefined)
@@ -257,38 +279,68 @@ async function executeAction(
                 await new Promise<void>((resolve) => {
                   const cancel = streamGeneration(data.generationId, {
                     onProgress: (event) => {
+                      const sceneProgress = event.data.progress ?? 0;
+                      const stageLabel = event.data.stage ?? event.data.message ?? "Generating";
+
+                      // WHY: Write per-scene progress to localStorage so
+                      // InlineVideoCard renders the bar in real time.
+                      try {
+                        const saved = localStorage.getItem("pm-video-projects");
+                        if (saved) {
+                          const entries: [string, { scenes: Array<{ progress?: number; progressStage?: string }> }][] = JSON.parse(saved);
+                          const updated = entries.map(([id, proj]) => {
+                            if (id !== videoProjectId) return [id, proj] as const;
+                            const updatedScenes = proj.scenes.map((s, idx) =>
+                              idx === i ? { ...s, progress: sceneProgress, progressStage: stageLabel } : s,
+                            );
+                            return [id, { ...proj, scenes: updatedScenes }] as const;
+                          });
+                          localStorage.setItem("pm-video-projects", JSON.stringify(updated));
+                          window.dispatchEvent(new Event("pm-video-projects-update"));
+                        }
+                      } catch { /* ignore */ }
+
                       if (statusCallback) {
-                        const sceneProgress = event.data.progress ?? 0;
                         const overallProgress = Math.round(((i + sceneProgress / 100) / totalScenes) * 100);
                         statusCallback({
                           progress: overallProgress,
-                          stage: `Scene ${sceneNum}/${totalScenes}`,
-                          detail: event.data.message ?? `Generating scene ${sceneNum}...`,
+                          stage: `Scene ${sceneNum} of ${totalScenes}`,
+                          detail: `${stageLabel} (${sceneProgress}%)`,
                         });
                       }
                     },
                     onCompleted: (event) => {
                       // WHY: Critic auto-score is included in the completion event.
-                      // Find the scene by index and update its score so the
-                      // InlineVideoCard displays the rating immediately.
+                      // Also flip status to "ready" + clear progress so the
+                      // InlineVideoCard renders the actual video.
                       const score = event.data.score;
-                      if (score != null) {
-                        // Update via localStorage since we're inside executeAction
-                        try {
-                          const saved = localStorage.getItem("pm-video-projects");
-                          if (saved) {
-                            const entries: [string, { scenes: Array<{ id: string; score?: number }> }][] = JSON.parse(saved);
-                            const updated = entries.map(([id, proj]) => {
-                              if (id !== videoProjectId) return [id, proj] as const;
-                              const updatedScenes = proj.scenes.map((s, idx) =>
-                                idx === i ? { ...s, score } : s,
-                              );
-                              return [id, { ...proj, scenes: updatedScenes }] as const;
-                            });
-                            localStorage.setItem("pm-video-projects", JSON.stringify(updated));
-                          }
-                        } catch { /* ignore */ }
-                      }
+                      const resultUrl = event.data.resultUrl;
+                      try {
+                        const saved = localStorage.getItem("pm-video-projects");
+                        if (saved) {
+                          const entries: [string, { scenes: Array<{ id: string; score?: number; status?: string; videoUrl?: string; progress?: number }> }][] = JSON.parse(saved);
+                          const updated = entries.map(([id, proj]) => {
+                            if (id !== videoProjectId) return [id, proj] as const;
+                            const updatedScenes = proj.scenes.map((s, idx) =>
+                              idx === i
+                                ? {
+                                    ...s,
+                                    status: "ready",
+                                    videoUrl: resultUrl
+                                      ? `/api/proxy/image?url=${encodeURIComponent(resultUrl)}`
+                                      : s.videoUrl,
+                                    progress: 100,
+                                    progressStage: "Complete",
+                                    ...(score != null ? { score } : {}),
+                                  }
+                                : s,
+                            );
+                            return [id, { ...proj, scenes: updatedScenes }] as const;
+                          });
+                          localStorage.setItem("pm-video-projects", JSON.stringify(updated));
+                          window.dispatchEvent(new Event("pm-video-projects-update"));
+                        }
+                      } catch { /* ignore */ }
                       completedCount++;
                       resolve();
                     },
@@ -312,9 +364,18 @@ async function executeAction(
             }
           }
 
+          // WHY: Friendlier completion message — "All 6 scenes ready" instead
+          // of the cryptic "6/6 scenes generated sequentially". On partial
+          // completion, show what worked vs failed clearly.
+          const detailMessage = completedCount === scenes.length
+            ? `All ${scenes.length} ${scenes.length === 1 ? "scene" : "scenes"} ready`
+            : completedCount === 0
+              ? `Generation failed — 0 of ${scenes.length} ${scenes.length === 1 ? "scene" : "scenes"} completed`
+              : `${completedCount} of ${scenes.length} scenes ready (${scenes.length - completedCount} failed)`;
+
           return {
             success: completedCount > 0,
-            detail: `${completedCount}/${scenes.length} scenes generated sequentially`,
+            detail: detailMessage,
             nodeRef: id,
             videoProjectId,
           };
@@ -744,6 +805,16 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
   // step: AI generates one scene at a time, pauses for approval/feedback before next
   // auto: AI generates all scenes hands-off, no stops
   const [creationMode, setCreationMode] = useState<"plan" | "step" | "auto">("plan");
+
+  // WHY: Force re-render when the CREATE_VIDEO loop writes progress updates
+  // to localStorage. The inline video set IIFE reads from localStorage on
+  // every render, so bumping this counter triggers a re-read.
+  const [, setVideoProjectsTick] = useState(0);
+  useEffect(() => {
+    const handler = () => setVideoProjectsTick((t) => t + 1);
+    window.addEventListener("pm-video-projects-update", handler);
+    return () => window.removeEventListener("pm-video-projects-update", handler);
+  }, []);
 
   // --- Project system ---
   const [projects, setProjects] = useState<Project[]>(() => {

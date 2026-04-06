@@ -38,6 +38,12 @@ type InlineVideoCardProps = {
   // WHY: Step Mode shows the Reject button and unlocks the auto-advance behavior.
   // In Auto Mode, the reject UI is hidden because there's no per-scene gating.
   stepMode?: boolean;
+  // WHY: Live progress + ETA. Updated by the ChatPanel from SSE events
+  // emitted during Seedance generation. The card extrapolates remaining
+  // time from progress vs elapsed.
+  progress?: number; // 0-100
+  progressStage?: string;
+  progressStartedAt?: number; // Date.now() when generation started
   onRegenerate: () => void;
   onRegenerateWithFeedback?: (feedback: string) => void;
   onTrimChange: (start: number, end: number) => void;
@@ -56,6 +62,9 @@ export function InlineVideoCard({
   score,
   attentionRole,
   stepMode = false,
+  progress,
+  progressStage,
+  progressStartedAt,
   onRegenerate,
   onRegenerateWithFeedback,
   onTrimChange,
@@ -76,6 +85,64 @@ export function InlineVideoCard({
 
   const isLoading = status === "generating" || status === "regenerating";
   const isReady = status === "ready" && videoUrl;
+
+  // WHY: Synthetic tick for the progress bar — even when SSE events are
+  // sparse (Seedance only emits ~5 progress events over 90s), the bar
+  // animates smoothly via this 250ms interpolation. Combines real progress
+  // (priority) with a time-based fallback baseline.
+  const [syntheticProgress, setSyntheticProgress] = useState(0);
+  const [elapsedSec, setElapsedSec] = useState(0);
+
+  useEffect(() => {
+    if (!isLoading) {
+      setSyntheticProgress(0);
+      setElapsedSec(0);
+      return;
+    }
+    // Baseline: assume ~90s for a 5s clip, ~150s for 10s, ~210s for 15s
+    // (real Seedance times — used for the synthetic fallback only)
+    const baselineMs = 60_000 + duration * 6_000;
+    const startedAt = progressStartedAt ?? Date.now();
+
+    const tick = () => {
+      const elapsed = Date.now() - startedAt;
+      const elapsedSeconds = Math.floor(elapsed / 1000);
+      setElapsedSec(elapsedSeconds);
+      // Synthetic curve: ease toward 92% (never hit 100% via clock alone —
+      // real completion comes from the SSE event)
+      const fraction = Math.min(0.92, 1 - Math.exp(-elapsed / baselineMs));
+      setSyntheticProgress(Math.round(fraction * 100));
+    };
+    tick();
+    const id = setInterval(tick, 250);
+    return () => clearInterval(id);
+  }, [isLoading, duration, progressStartedAt]);
+
+  // Real progress takes priority over synthetic. Only use synthetic if real is missing.
+  const displayProgress = progress != null && progress > 0 ? progress : syntheticProgress;
+
+  // ETA extrapolation: at low progress use the baseline, at higher progress
+  // extrapolate linearly from the actual elapsed/percent ratio.
+  let etaSeconds: number | null = null;
+  if (isLoading && displayProgress > 5 && displayProgress < 100) {
+    if (progress != null && progress > 5 && progressStartedAt) {
+      // Real-progress extrapolation: elapsed * (100/progress - 1)
+      const elapsed = (Date.now() - progressStartedAt) / 1000;
+      etaSeconds = Math.max(1, Math.round(elapsed * (100 / progress - 1)));
+    } else {
+      // Synthetic baseline ETA
+      const totalEstimated = 60 + duration * 6;
+      etaSeconds = Math.max(1, totalEstimated - elapsedSec);
+    }
+  }
+
+  function formatEta(s: number | null): string {
+    if (s == null) return "";
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return r === 0 ? `${m}m` : `${m}m ${r}s`;
+  }
 
   // Sync local trim with props
   useEffect(() => {
@@ -194,12 +261,35 @@ export function InlineVideoCard({
               )}
             </div>
           ) : isLoading ? (
-            <div className="flex items-center justify-center h-32 bg-void/30">
-              <div className="flex flex-col items-center gap-2">
-                <Loader2 size={20} className="animate-spin text-royal" />
-                <span className="text-[10px] text-ash">
-                  {status === "regenerating" ? "Regenerating..." : "Generating scene..."}
+            <div className="flex flex-col items-center justify-center h-32 bg-void/40 px-6 gap-3">
+              {/* Stage label + percentage row */}
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-2">
+                  <Loader2 size={12} className="animate-spin text-royal" />
+                  <span className="text-[10px] text-cloud font-medium">
+                    {status === "regenerating" ? "Regenerating" : "Generating"}
+                    {progressStage ? ` — ${progressStage}` : ""}
+                  </span>
+                </div>
+                <span className="text-[11px] font-mono font-semibold text-royal tabular-nums">
+                  {displayProgress}%
                 </span>
+              </div>
+
+              {/* Progress bar */}
+              <div className="w-full h-1.5 rounded-full bg-slate/60 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-royal/80 via-royal to-royal-hover shadow-[0_0_8px_rgba(99,102,241,0.4)] transition-all duration-300 ease-out"
+                  style={{ width: `${displayProgress}%` }}
+                />
+              </div>
+
+              {/* ETA + elapsed */}
+              <div className="flex items-center justify-between w-full text-[9px] text-ash/70 font-mono tabular-nums">
+                <span>{elapsedSec}s elapsed</span>
+                {etaSeconds != null && (
+                  <span>~{formatEta(etaSeconds)} remaining</span>
+                )}
               </div>
             </div>
           ) : (
@@ -361,6 +451,9 @@ type InlineVideoSetProps = {
     trimEnd: number;
     score?: number;
     attentionRole?: string;
+    progress?: number;
+    progressStage?: string;
+    progressStartedAt?: number;
   }>;
   totalScenes: number;
   projectTitle: string;
@@ -420,6 +513,9 @@ export function InlineVideoSet({
           score={scene.score}
           attentionRole={scene.attentionRole}
           stepMode={stepMode}
+          progress={scene.progress}
+          progressStage={scene.progressStage}
+          progressStartedAt={scene.progressStartedAt}
           onRegenerate={() => onRegenerate(scene.id)}
           onRegenerateWithFeedback={
             onRegenerateWithFeedback
