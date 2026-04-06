@@ -739,7 +739,11 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
   const [isThinking, setIsThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessionId] = useState(() => crypto.randomUUID());
-  const [creationMode, setCreationMode] = useState<"plan" | "auto">("plan");
+  // WHY: Three creation modes —
+  // plan: AI builds the written plan, never generates without explicit "execute"
+  // step: AI generates one scene at a time, pauses for approval/feedback before next
+  // auto: AI generates all scenes hands-off, no stops
+  const [creationMode, setCreationMode] = useState<"plan" | "step" | "auto">("plan");
 
   // --- Project system ---
   const [projects, setProjects] = useState<Project[]>(() => {
@@ -854,7 +858,10 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
     function handleKeyDown(e: KeyboardEvent) {
       if (e.shiftKey && e.key === "Tab") {
         e.preventDefault();
-        setCreationMode(prev => prev === "plan" ? "auto" : "plan");
+        // Cycle: plan → step → auto → plan
+        setCreationMode((prev) =>
+          prev === "plan" ? "step" : prev === "step" ? "auto" : "plan"
+        );
       }
       // Escape closes dropdowns
       if (e.key === "Escape") {
@@ -1486,6 +1493,68 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
                     }))}
                     totalScenes={sceneCount}
                     projectTitle={videoNode.title}
+                    stepMode={creationMode === "step"}
+                    onRegenerateWithFeedback={async (sceneId, feedback) => {
+                      // WHY: Step Mode reject + feedback flow. Take the scene's
+                      // current prompt + the user's feedback, ask Claude to revise
+                      // the prompt, then regenerate with the revised prompt.
+                      const scene = projectScenes.find((s) => s.id === sceneId);
+                      if (!scene || !msg.videoProjectId) return;
+                      try {
+                        const reviseRes = await fetch("/api/ai/revise-scene-prompt", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            originalPrompt: scene.prompt,
+                            feedback,
+                            sceneIndex: projectScenes.findIndex((s) => s.id === sceneId),
+                            totalScenes: sceneCount,
+                          }),
+                        });
+                        if (!reviseRes.ok) return;
+                        const reviseData = await reviseRes.json();
+                        const revisedPrompt = reviseData?.revisedPrompt ?? reviseData?.data?.revisedPrompt;
+                        if (!revisedPrompt) return;
+
+                        // Update the scene's prompt in localStorage so future regenerates use the revised version
+                        try {
+                          const saved = localStorage.getItem("pm-video-projects");
+                          if (saved) {
+                            const entries: [string, { scenes: typeof projectScenes }][] = JSON.parse(saved);
+                            const updated = entries.map(([id, proj]) =>
+                              id === msg.videoProjectId
+                                ? [id, { ...proj, scenes: proj.scenes.map((s) => s.id === sceneId ? { ...s, prompt: revisedPrompt } : s) }] as const
+                                : [id, proj] as const,
+                            );
+                            localStorage.setItem("pm-video-projects", JSON.stringify(updated));
+                          }
+                        } catch { /* ignore */ }
+
+                        // Now regenerate with the revised prompt
+                        const sceneIdx = projectScenes.findIndex((s) => s.id === sceneId);
+                        onCanvasAction({ type: "generate-video-scene", videoProjectId: msg.videoProjectId, sceneIndex: sceneIdx });
+                        const res = await fetch("/api/generate/video", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ prompt: revisedPrompt, duration: scene.duration, aspectRatio: "16:9", mode: "t2v" }),
+                        });
+                        if (!res.ok) return;
+                        const data = await res.json();
+                        if (data.generationId) {
+                          const { streamGeneration } = await import("@/lib/api");
+                          streamGeneration(data.generationId, { onCompleted: () => { /* state syncs via VideoEditor */ } });
+                        }
+                      } catch { /* fail silently */ }
+                    }}
+                    onApproveScene={async (sceneId) => {
+                      // WHY: In Step Mode, approving a scene auto-advances to the next.
+                      // We send a chat message saying "approve" so the AI generates the next scene.
+                      if (creationMode !== "step") return;
+                      const sceneIdx = projectScenes.findIndex((s) => s.id === sceneId);
+                      if (sceneIdx < 0 || sceneIdx >= sceneCount - 1) return;
+                      // Auto-send "approve" to advance to next scene
+                      handleSend(`Scene ${sceneIdx + 1} approved. Generate scene ${sceneIdx + 2} of ${sceneCount}.`);
+                    }}
                     onRegenerate={async (sceneId) => {
                       // WHY: Inline regenerate — directly call the video API
                       // for this specific scene rather than opening the editor.
@@ -1600,22 +1669,46 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
         </div>
       </div>
 
-      {/* Mode toggle — larger tap target on mobile, Shift+Tab hint on desktop */}
-      <div className="flex items-center justify-between px-4 py-2 border-t border-smoke/30">
-        <button
-          onClick={() => setCreationMode(creationMode === "plan" ? "auto" : "plan")}
-          className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition-all cursor-pointer ${
-            creationMode === "plan"
-              ? "bg-royal/10 text-royal border border-royal/20"
-              : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-          }`}
-        >
-          {creationMode === "plan" ? <ListChecks size={14} strokeWidth={1.5} /> : <Rocket size={14} strokeWidth={1.5} />}
-          {creationMode === "plan" ? "Plan Mode" : "Auto Mode"}
-          <span className="text-[9px] opacity-60 ml-1">
-            {creationMode === "plan" ? "· Scene-by-scene" : "· Hands-off"}
-          </span>
-        </button>
+      {/* Mode toggle — 3-way picker: Plan / Step / Auto */}
+      <div className="flex items-center justify-between px-4 py-2 border-t border-smoke/30 gap-2">
+        <div className="flex items-center gap-1 rounded-lg border border-smoke/30 bg-slate/30 p-0.5">
+          <button
+            onClick={() => setCreationMode("plan")}
+            title="Plan Mode — AI builds the plan, no generation until you say execute"
+            className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-all cursor-pointer ${
+              creationMode === "plan"
+                ? "bg-royal/15 text-royal"
+                : "text-ash/60 hover:text-cloud"
+            }`}
+          >
+            <ListChecks size={12} strokeWidth={1.5} />
+            Plan
+          </button>
+          <button
+            onClick={() => setCreationMode("step")}
+            title="Step Mode — AI generates one scene at a time, you approve or reject with feedback"
+            className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-all cursor-pointer ${
+              creationMode === "step"
+                ? "bg-amber-500/15 text-amber-400"
+                : "text-ash/60 hover:text-cloud"
+            }`}
+          >
+            <Check size={12} strokeWidth={1.5} />
+            Step
+          </button>
+          <button
+            onClick={() => setCreationMode("auto")}
+            title="Auto Mode — AI generates everything hands-off, no stops"
+            className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-all cursor-pointer ${
+              creationMode === "auto"
+                ? "bg-emerald-500/15 text-emerald-400"
+                : "text-ash/60 hover:text-cloud"
+            }`}
+          >
+            <Rocket size={12} strokeWidth={1.5} />
+            Auto
+          </button>
+        </div>
         <span className="hidden lg:inline text-[9px] text-ash/30 font-mono">
           Shift+Tab
         </span>

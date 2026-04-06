@@ -14,6 +14,7 @@ import {
   Sparkles,
   Download,
   Music,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 
@@ -34,7 +35,11 @@ type InlineVideoCardProps = {
   trimEnd: number;
   score?: number;
   attentionRole?: string;
+  // WHY: Step Mode shows the Reject button and unlocks the auto-advance behavior.
+  // In Auto Mode, the reject UI is hidden because there's no per-scene gating.
+  stepMode?: boolean;
   onRegenerate: () => void;
+  onRegenerateWithFeedback?: (feedback: string) => void;
   onTrimChange: (start: number, end: number) => void;
   onApprove: () => void;
 };
@@ -50,7 +55,9 @@ export function InlineVideoCard({
   trimEnd,
   score,
   attentionRole,
+  stepMode = false,
   onRegenerate,
+  onRegenerateWithFeedback,
   onTrimChange,
   onApprove,
 }: InlineVideoCardProps) {
@@ -61,6 +68,11 @@ export function InlineVideoCard({
   const [approved, setApproved] = useState(false);
   const [localTrimStart, setLocalTrimStart] = useState(trimStart);
   const [localTrimEnd, setLocalTrimEnd] = useState(trimEnd);
+  // WHY: Step Mode reject + feedback flow. Type what's wrong → AI revises
+  // the prompt → scene regenerates with the feedback baked in.
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
 
   const isLoading = status === "generating" || status === "regenerating";
   const isReady = status === "ready" && videoUrl;
@@ -243,7 +255,7 @@ export function InlineVideoCard({
 
           {/* Action buttons */}
           {isReady && (
-            <div className="flex items-center gap-1.5 px-3 pb-2.5">
+            <div className="flex items-center gap-1.5 px-3 pb-2.5 flex-wrap">
               <button
                 onClick={onRegenerate}
                 disabled={isLoading}
@@ -259,18 +271,73 @@ export function InlineVideoCard({
               >
                 <Scissors size={10} /> Trim
               </button>
+              {/* Reject — only in Step Mode (gives feedback to revise the prompt) */}
+              {stepMode && onRegenerateWithFeedback && !approved && (
+                <button
+                  onClick={() => setShowFeedback((v) => !v)}
+                  className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] transition-colors cursor-pointer ${
+                    showFeedback ? "bg-coral/15 text-coral" : "bg-slate/80 text-ash hover:text-coral hover:bg-coral/10"
+                  }`}
+                >
+                  <X size={10} /> Reject
+                </button>
+              )}
               {!approved ? (
                 <button
                   onClick={() => { setApproved(true); onApprove(); }}
                   className="flex items-center gap-1 rounded-lg bg-emerald-600/80 px-2 py-1 text-[10px] text-white hover:bg-emerald-500 transition-colors cursor-pointer ml-auto"
                 >
-                  <Check size={10} /> Approve
+                  <Check size={10} /> {stepMode ? "Approve & Next" : "Approve"}
                 </button>
               ) : (
                 <span className="flex items-center gap-1 ml-auto text-[10px] text-emerald-400">
                   <Check size={10} /> Approved
                 </span>
               )}
+            </div>
+          )}
+
+          {/* Feedback input — appears below action buttons when Reject is clicked */}
+          {showFeedback && stepMode && onRegenerateWithFeedback && (
+            <div className="px-3 pb-3 border-t border-coral/20 pt-2">
+              <div className="text-[9px] uppercase tracking-wider text-coral/70 font-medium mb-1.5">
+                What's wrong with this scene?
+              </div>
+              <textarea
+                value={feedbackText}
+                onChange={(e) => setFeedbackText(e.target.value)}
+                placeholder="e.g. too dark, wrong angle, make him smile, slower motion..."
+                rows={2}
+                disabled={submittingFeedback}
+                className="w-full rounded-lg bg-void/60 border border-coral/20 px-2 py-1.5 text-[11px] text-cloud placeholder:text-ash/40 outline-none focus:border-coral/50 resize-none"
+              />
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <button
+                  onClick={async () => {
+                    if (!feedbackText.trim() || !onRegenerateWithFeedback) return;
+                    setSubmittingFeedback(true);
+                    try {
+                      await onRegenerateWithFeedback(feedbackText.trim());
+                      setShowFeedback(false);
+                      setFeedbackText("");
+                    } finally {
+                      setSubmittingFeedback(false);
+                    }
+                  }}
+                  disabled={!feedbackText.trim() || submittingFeedback}
+                  className="flex items-center gap-1 rounded-lg bg-coral/80 px-2 py-1 text-[10px] text-white hover:bg-coral transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {submittingFeedback ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+                  {submittingFeedback ? "Revising..." : "Submit & Regenerate"}
+                </button>
+                <button
+                  onClick={() => { setShowFeedback(false); setFeedbackText(""); }}
+                  disabled={submittingFeedback}
+                  className="text-[10px] text-ash hover:text-cloud cursor-pointer disabled:opacity-40"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -297,7 +364,10 @@ type InlineVideoSetProps = {
   }>;
   totalScenes: number;
   projectTitle: string;
+  stepMode?: boolean;
   onRegenerate: (sceneId: string) => void;
+  onRegenerateWithFeedback?: (sceneId: string, feedback: string) => Promise<void>;
+  onApproveScene?: (sceneId: string) => void;
   onTrimChange: (sceneId: string, start: number, end: number) => void;
   onStitch: () => void;
   onGenerateScore: () => void;
@@ -310,7 +380,10 @@ export function InlineVideoSet({
   scenes,
   totalScenes,
   projectTitle,
+  stepMode = false,
   onRegenerate,
+  onRegenerateWithFeedback,
+  onApproveScene,
   onTrimChange,
   onStitch,
   onGenerateScore,
@@ -346,9 +419,19 @@ export function InlineVideoSet({
           trimEnd={scene.trimEnd}
           score={scene.score}
           attentionRole={scene.attentionRole}
+          stepMode={stepMode}
           onRegenerate={() => onRegenerate(scene.id)}
+          onRegenerateWithFeedback={
+            onRegenerateWithFeedback
+              ? (feedback) => onRegenerateWithFeedback(scene.id, feedback)
+              : undefined
+          }
           onTrimChange={(start, end) => onTrimChange(scene.id, start, end)}
-          onApprove={() => setApprovedScenes((prev) => new Set(prev).add(scene.id))}
+          onApprove={() => {
+            setApprovedScenes((prev) => new Set(prev).add(scene.id));
+            // In Step Mode, approval triggers the next scene generation
+            onApproveScene?.(scene.id);
+          }}
         />
       ))}
 

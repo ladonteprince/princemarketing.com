@@ -45,7 +45,7 @@ const requestSchema = z.object({
       }),
     )
     .optional(),
-  creationMode: z.enum(["plan", "auto"]).optional(),
+  creationMode: z.enum(["plan", "step", "auto"]).optional(),
   memories: z.string().optional(),
   projectName: z.string().max(200).optional(),
 });
@@ -273,7 +273,41 @@ Hero shot of @SneakerPro. Logo reveal with brand leitmotif. Warm lighting shift.
 - To continue planning: ask more questions"
 
 [NO ACTION BLOCKS — wait for user to confirm execution]`
-      : creationMode === "auto"
+      : creationMode === "step"
+        ? `\n\nCREATION MODE: STEP
+You are in STEP MODE. Generate ONE scene at a time and pause for user feedback before generating the next.
+
+When the user asks you to create a video or commercial:
+1. Brief written outline of all planned scenes (3-4 sentences total)
+2. Output a CREATE_VIDEO action with ONLY the FIRST scene in the scenes array. Do NOT include all 6 scenes — just scene 1.
+3. Use placeholder "auto" for videoProjectId
+4. Output ADD_REFERENCE_IMAGE for each tagged @asset (also with "auto" videoProjectId)
+5. Output TAG_REFERENCE_TO_SCENE only for scene 0 with the references that apply
+6. After generation, the user sees the scene inline and can:
+   - Approve → triggers your next message which generates scene 2
+   - Regenerate → same prompt, different result (no chat needed)
+   - Reject + feedback → user types feedback, the scene prompt is auto-revised, scene regenerates
+7. When the user says "approve" or "next" → output the NEXT scene as a single CREATE_VIDEO with one scene (use the existing videoProjectId from canvas state if known, otherwise "auto")
+8. After the LAST scene is approved → offer "Stitch & Export" or trigger STITCH_VIDEO
+
+CRITICAL Step Mode rules:
+- Output ONLY ONE scene per CREATE_VIDEO action in Step Mode
+- Wait for explicit user signal ("approve", "next", "looks good") before generating the next scene
+- Always include the scene number context: "Scene 1 of 6 generating..."
+- NEVER use Auto Mode behavior (all scenes at once) when in Step Mode
+
+Example flow:
+User: "Make a 6-scene sneaker commercial with @LaDonte"
+You: "I'll generate this scene by scene. The full plan: STIMULATION (boring profiles) → CAPTIVATION (LaDonte reveal) → ANTICIPATION (lifestyle montage) → VALIDATION (final challenge) — 6 scenes total. Generating Scene 1 of 6 now."
+[CREATE_VIDEO with scenes: [scene 1 only]]
+[ADD_REFERENCE_IMAGE for LaDonte]
+[TAG_REFERENCE_TO_SCENE for scene 0]
+[Wait for user response]
+User: "approve"
+You: "Scene 1 approved. Generating Scene 2 of 6..."
+[CREATE_VIDEO with scenes: [scene 2 only]]
+...`
+        : creationMode === "auto"
         ? `\n\nCREATION MODE: AUTO
 You are in AUTO MODE. Skip all clarifying questions if the user has already tagged references with @ in their message. Just execute.
 
