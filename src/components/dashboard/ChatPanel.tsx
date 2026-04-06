@@ -106,11 +106,19 @@ type StatusUpdate = { progress?: number; stage?: string; detail?: string };
 // WHY: Execute agentic actions returned by Claude against the platform APIs.
 // Each action type maps to a specific API call and canvas operation.
 // statusCallback provides real-time progress for long-running actions (SSE streaming).
+// WHY: stepMode + waitForApproval enable per-scene gating in Step Mode.
+// The CREATE_VIDEO loop awaits waitForApproval() after each scene completes
+// (except the last) when stepMode is true. The promise is held by ChatPanel
+// and only resolves when the user clicks the Approve button on the inline
+// video card. In Auto Mode, waitForApproval is undefined and the loop runs
+// straight through.
 async function executeAction(
   action: AgentAction,
   onCanvasAction: (action: CanvasAction) => void,
   nodes: ContentNode[],
   statusCallback?: (update: StatusUpdate) => void,
+  stepMode?: boolean,
+  waitForApproval?: (sceneIndex: number) => Promise<void>,
 ): Promise<{ success: boolean; detail: string; nodeRef?: string; videoProjectId?: string }> {
   switch (action.action) {
     case "CREATE_IMAGE": {
@@ -361,6 +369,23 @@ async function executeAction(
               }
             } catch {
               // Scene generation failed — continue to next scene
+            }
+
+            // WHY: Step Mode gating — after each scene completes, pause the
+            // loop and wait for the user to click Approve on the inline card.
+            // The waitForApproval promise is held by ChatPanel and resolves
+            // when the user clicks Approve (or Reject + feedback regenerates
+            // the same scene). Skip on the last scene since there's nothing to
+            // advance to.
+            if (stepMode && waitForApproval && i < scenes.length - 1) {
+              if (statusCallback) {
+                statusCallback({
+                  progress: Math.round(((i + 1) / totalScenes) * 100),
+                  stage: `Scene ${sceneNum} of ${totalScenes}`,
+                  detail: `Waiting for your approval to continue...`,
+                });
+              }
+              await waitForApproval(i);
             }
           }
 
@@ -816,6 +841,30 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
     return () => window.removeEventListener("pm-video-projects-update", handler);
   }, []);
 
+  // WHY: Per-scene approval gating in Step Mode. The CREATE_VIDEO loop
+  // calls waitForApproval(sceneIndex) after each scene completes; this
+  // returns a promise that only resolves when the user clicks Approve on
+  // that scene. The resolver is stored in a ref so onApproveScene can call it.
+  const pendingApprovalResolverRef = useRef<{ sceneIndex: number; resolve: () => void } | null>(null);
+  const waitForApproval = useCallback((sceneIndex: number): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      pendingApprovalResolverRef.current = { sceneIndex, resolve };
+    });
+  }, []);
+  const releaseApproval = useCallback((sceneIndex: number) => {
+    const pending = pendingApprovalResolverRef.current;
+    if (pending && pending.sceneIndex === sceneIndex) {
+      pending.resolve();
+      pendingApprovalResolverRef.current = null;
+    }
+  }, []);
+  // WHY: We need to read the LATEST creationMode inside the executeAction
+  // closure (which captures stale state). Use a ref that always tracks current.
+  const creationModeRef = useRef(creationMode);
+  useEffect(() => {
+    creationModeRef.current = creationMode;
+  }, [creationMode]);
+
   // --- Project system ---
   const [projects, setProjects] = useState<Project[]>(() => {
     if (typeof window === "undefined") return [{ id: "default", name: "Default Project", createdAt: new Date().toISOString() }];
@@ -1043,7 +1092,18 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
             );
           };
 
-          result = await executeAction(preprocessed[i], onCanvasAction, nodes, statusCallback);
+          // WHY: Pass the LIVE creationMode (via ref) and the waitForApproval
+          // gating function so executeAction can pause CREATE_VIDEO loops
+          // mid-flight in Step Mode.
+          const isStepMode = creationModeRef.current === "step";
+          result = await executeAction(
+            preprocessed[i],
+            onCanvasAction,
+            nodes,
+            statusCallback,
+            isStepMode,
+            isStepMode ? waitForApproval : undefined,
+          );
         }
 
         statuses[i].status = result.success ? "done" : "error";
@@ -1068,7 +1128,7 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
 
       return allNodeRefs;
     },
-    [onCanvasAction, nodes],
+    [onCanvasAction, nodes, waitForApproval],
   );
 
   async function handleSend(content: string, attachments?: Array<{ id: string; url: string; name: string; type: string }>) {
@@ -1628,14 +1688,16 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
                         }
                       } catch { /* fail silently */ }
                     }}
-                    onApproveScene={async (sceneId) => {
-                      // WHY: In Step Mode, approving a scene auto-advances to the next.
-                      // We send a chat message saying "approve" so the AI generates the next scene.
+                    onApproveScene={(sceneId) => {
+                      // WHY: In Step Mode, approving a scene releases the
+                      // pending approval lock in the CREATE_VIDEO loop, which
+                      // then resumes generation of the NEXT scene. The loop
+                      // is paused via waitForApproval(sceneIdx) and resumes
+                      // when releaseApproval(sceneIdx) is called here.
                       if (creationMode !== "step") return;
                       const sceneIdx = projectScenes.findIndex((s) => s.id === sceneId);
-                      if (sceneIdx < 0 || sceneIdx >= sceneCount - 1) return;
-                      // Auto-send "approve" to advance to next scene
-                      handleSend(`Scene ${sceneIdx + 1} approved. Generate scene ${sceneIdx + 2} of ${sceneCount}.`);
+                      if (sceneIdx < 0) return;
+                      releaseApproval(sceneIdx);
                     }}
                     onRegenerate={async (sceneId) => {
                       // WHY: Inline regenerate — directly call the video API
