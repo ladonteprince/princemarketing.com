@@ -49,6 +49,19 @@ export async function POST(request: Request) {
       );
     }
 
+    // WHY: The .ai endpoint expects duration as a string enum ("5"|"10"|"15")
+    // but the .com frontend sends it as a number. Coerce here so the rest of the
+    // app can keep using numeric durations.
+    const upstreamBody: Record<string, unknown> = { ...parsed.data };
+    if (typeof upstreamBody.duration === "number") {
+      const d = upstreamBody.duration;
+      const allowed = [5, 10, 15];
+      const closest = allowed.reduce((prev, curr) =>
+        Math.abs(curr - d) < Math.abs(prev - d) ? curr : prev,
+      );
+      upstreamBody.duration = String(closest);
+    }
+
     // Call .ai backend directly to handle 202 response
     const res = await fetch(`${API_BASE}/api/v1/generate/video`, {
       method: "POST",
@@ -56,7 +69,7 @@ export async function POST(request: Request) {
         "Content-Type": "application/json",
         "x-api-key": API_KEY,
       },
-      body: JSON.stringify(parsed.data),
+      body: JSON.stringify(upstreamBody),
     });
 
     const result = await res.json();
