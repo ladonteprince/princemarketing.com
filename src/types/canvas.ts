@@ -79,4 +79,6 @@ export type CanvasAction =
   | { type: "stitch-video"; videoProjectId: string }
   | { type: "set-scene-mode"; videoProjectId: string; sceneIndex: number; mode: VideoSceneMode }
   | { type: "add-reference-image"; videoProjectId: string; url: string; label: string; category?: "character" | "prop" | "scene" }
-  | { type: "tag-reference-to-scene"; videoProjectId: string; sceneIndex: number; refLabel: string };
+  | { type: "tag-reference-to-scene"; videoProjectId: string; sceneIndex: number; refLabel: string }
+  | { type: "open-karaoke"; videoProjectId: string; script: Array<{ startTime: number; endTime: number; text: string }> }
+  | { type: "set-scene-score"; videoProjectId: string; sceneId: string; score: number };

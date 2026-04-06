@@ -47,6 +47,14 @@ export default function DashboardPage() {
     return localStorage.getItem(ACTIVE_VIDEO_STORAGE_KEY) || null;
   });
 
+  // WHY: Active karaoke session — when set, the VideoEditor renders the
+  // KaraokeRecorder inline. Set by the OPEN_KARAOKE action from the chat
+  // or the "Record Voiceover" button on the stitch preview.
+  const [activeKaraoke, setActiveKaraoke] = useState<{
+    videoProjectId: string;
+    script: Array<{ startTime: number; endTime: number; text: string }>;
+  } | null>(null);
+
   // Recent assets for quick-links strip
   const [recentAssets, setRecentAssets] = useState<
     { id: string; url: string; type: string; name?: string }[]
@@ -281,6 +289,32 @@ export default function DashboardPage() {
           });
           break;
         }
+        case "open-karaoke": {
+          // WHY: Open the inline KaraokeRecorder for this project. The VideoEditor
+          // watches activeKaraoke state and renders the recorder when set.
+          setActiveKaraoke({
+            videoProjectId: action.videoProjectId,
+            script: action.script,
+          });
+          setActiveVideoProject(action.videoProjectId);
+          break;
+        }
+        case "set-scene-score": {
+          // WHY: The Gemini Critic auto-scores scenes after generation; this
+          // updates the score on the matching scene so it shows on the
+          // InlineVideoCard.
+          setVideoProjects((prev) => {
+            const next = new Map(prev);
+            const project = next.get(action.videoProjectId);
+            if (!project) return prev;
+            const scenes = project.scenes.map((s) =>
+              s.id === action.sceneId ? { ...s, score: action.score } : s,
+            );
+            next.set(action.videoProjectId, { ...project, scenes });
+            return next;
+          });
+          break;
+        }
       }
     },
     [nodes],
@@ -426,6 +460,8 @@ export default function DashboardPage() {
                   project={activeProject}
                   onUpdateProject={handleUpdateVideoProject}
                   onClose={() => setActiveVideoProject(null)}
+                  karaokeSession={activeKaraoke?.videoProjectId === activeProject.id ? activeKaraoke : null}
+                  onCloseKaraoke={() => setActiveKaraoke(null)}
                 />
               </ErrorBoundary>
             </div>

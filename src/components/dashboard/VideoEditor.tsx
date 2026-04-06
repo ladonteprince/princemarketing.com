@@ -35,6 +35,7 @@ import type {
   ReferenceImage,
 } from "@/types/canvas";
 import { TimelineView } from "./TimelineView";
+import { KaraokeRecorder } from "./KaraokeRecorder";
 import { streamGeneration } from "@/lib/api";
 
 /* ─── Props ─────────────────────────────────────────────────────────── */
@@ -44,6 +45,13 @@ type VideoEditorProps = {
   onUpdateProject: (project: VideoProject | ((prev: VideoProject) => VideoProject)) => void;
   onClose?: () => void;
   initialDrawerOpen?: boolean;
+  // WHY: External karaoke session control — when set, the VideoEditor opens
+  // the KaraokeRecorder. Triggered by the OPEN_KARAOKE chat action.
+  karaokeSession?: {
+    videoProjectId: string;
+    script: Array<{ startTime: number; endTime: number; text: string }>;
+  } | null;
+  onCloseKaraoke?: () => void;
 };
 
 /* ─── Constants ─────────────────────────────────────────────────────── */
@@ -705,6 +713,8 @@ export function VideoEditor({
   onUpdateProject,
   onClose,
   initialDrawerOpen,
+  karaokeSession,
+  onCloseKaraoke,
 }: VideoEditorProps) {
   const [newPrompt, setNewPrompt] = useState("");
   const [showAddScene, setShowAddScene] = useState(false);
@@ -1056,12 +1066,76 @@ export function VideoEditor({
       if (res.ok) {
         const data = await res.json();
         const url = data.videoUrl || data.directUrl;
-        if (url) setStitchedUrl(url);
+        if (url) {
+          setStitchedUrl(url);
+          // WHY: Auto-trigger Sound Director → Lyria 3 pipeline as soon as
+          // stitch completes, unless the project already has audio. The user
+          // can override or regenerate via the Generate Score button.
+          if (!project.audioUrl) {
+            void autoGenerateScore(url);
+          }
+        }
       }
     } catch {
       // Stitch failed
     } finally {
       setStitching(false);
+    }
+  }
+
+  // WHY: Runs Sound Director → Lyria 3 in the background after stitch.
+  // Sets project.audioUrl when complete. Doesn't block the UI.
+  async function autoGenerateScore(stitchedVideoUrl: string) {
+    setGeneratingScore(true);
+    try {
+      let currentTime = 0;
+      const sceneTiming = project.scenes
+        .filter((s) => s.videoUrl && s.status === "ready")
+        .map((s, i, arr) => {
+          const duration = s.trimEnd - s.trimStart;
+          const startTime = currentTime;
+          currentTime += duration;
+          const role = i === 0 ? "stimulation"
+            : i === arr.length - 1 ? "validation"
+            : i < arr.length / 2 ? "captivation" : "anticipation";
+          return { prompt: s.prompt, startTime, endTime: currentTime, attentionRole: role };
+        });
+
+      const directRes = await fetch("/api/proxy/direct-sound", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoUrl: stitchedVideoUrl,
+          scenes: sceneTiming,
+          totalDuration: currentTime,
+          targetEmotion: "engagement",
+        }),
+      });
+      if (!directRes.ok) return;
+      const directData = await directRes.json();
+      const lyriaPrompt = directData?.data?.lyriaPrompt ?? directData?.lyriaPrompt;
+      if (!lyriaPrompt) return;
+
+      // Call Lyria 3 instead of Suno — uses same Gemini API key, native timestamps
+      const musicRes = await fetch("/api/generate/music/lyria", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: lyriaPrompt,
+          duration: Math.ceil(currentTime),
+          model: "pro",
+        }),
+      });
+      if (!musicRes.ok) return;
+      const musicData = await musicRes.json();
+      const audioUrl = musicData?.data?.audioUrl ?? musicData?.audioUrl;
+      if (audioUrl) {
+        updateProject({ audioUrl });
+      }
+    } catch {
+      // Score generation failed silently — user can retry via button
+    } finally {
+      setGeneratingScore(false);
     }
   }
 
@@ -2153,6 +2227,35 @@ export function VideoEditor({
             <div className="p-4">
               <video src={stitchedUrl} controls autoPlay className="w-full rounded-xl" />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Karaoke Recorder Overlay ───────────────────────────────────
+          WHY: Renders the inline KaraokeRecorder when either the user
+          clicks "Record Voiceover" (showKaraoke local state) OR the
+          AI Strategist triggers OPEN_KARAOKE from chat (karaokeSession prop). */}
+      {(showKaraoke || karaokeSession) && stitchedUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-void/80 backdrop-blur-sm overflow-y-auto p-4">
+          <div className="w-full max-w-3xl">
+            <KaraokeRecorder
+              videoUrl={stitchedUrl}
+              script={
+                karaokeSession?.script ?? [
+                  // Default fallback script — single line covering full duration
+                  { startTime: 0, endTime: project.scenes.reduce((sum, s) => sum + (s.trimEnd - s.trimStart), 0), text: "Add your voiceover here..." },
+                ]
+              }
+              onRecordingComplete={(_blob, audioUrl) => {
+                updateProject({ audioUrl });
+                setShowKaraoke(false);
+                onCloseKaraoke?.();
+              }}
+              onClose={() => {
+                setShowKaraoke(false);
+                onCloseKaraoke?.();
+              }}
+            />
           </div>
         </div>
       )}

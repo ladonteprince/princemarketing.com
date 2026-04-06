@@ -165,6 +165,40 @@ const ScoreContentAction = z.object({
   format: z.enum(["short-form", "long-form", "ad", "caption", "email", "landing-page"]).optional(),
 });
 
+// --- Multi-Image Reference Sheet Creation ---
+// WHY: When the user has photos of themselves/their product/their location,
+// generate a reference sheet from those photos via Nano Banana Pro multi-image input.
+const CreateReferenceFromPhotosAction = z.object({
+  action: z.literal("CREATE_REFERENCE_FROM_PHOTOS"),
+  category: z.enum(["character", "prop", "environment"]),
+  label: z.string().max(100),
+  imageUrls: z.array(z.string().url()).min(1).max(20),
+  description: z.string().max(500).optional(),
+  videoProjectId: z.string().uuid().optional(),
+});
+
+// --- Karaoke Voiceover Recording ---
+// WHY: Opens the inline karaoke recorder so the user can record their own voiceover
+// against a timestamped script while watching the video play.
+const OpenKaraokeAction = z.object({
+  action: z.literal("OPEN_KARAOKE"),
+  videoProjectId: z.string().uuid(),
+  script: z.array(z.object({
+    startTime: z.number().min(0),
+    endTime: z.number().min(0),
+    text: z.string().max(1000),
+  })).min(1).max(50),
+});
+
+// --- Generate Score (Sound Director → Lyria 3) ---
+// WHY: Triggers the full audio pipeline: Sound Director analyzes the stitched
+// video, queries the Production Brain, generates a Sound Skeleton, then Lyria 3
+// generates the music with timestamp-controlled scoring.
+const GenerateScoreAction = z.object({
+  action: z.literal("GENERATE_SCORE"),
+  videoProjectId: z.string().uuid(),
+});
+
 // --- Memory Actions ---
 // WHY: The AI saves memories about the user's brand, preferences, and past performance.
 // Memories persist across sessions via localStorage and are injected into the system prompt.
@@ -199,6 +233,9 @@ export const ActionBlockSchema = z.discriminatedUnion("action", [
   DistributeAction,
   GetAdsAnalyticsAction,
   ScoreContentAction,
+  CreateReferenceFromPhotosAction,
+  OpenKaraokeAction,
+  GenerateScoreAction,
   GenerateVideoSceneAction,
   ExtendVideoSceneAction,
   StitchVideoAction,

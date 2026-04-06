@@ -26,6 +26,8 @@ import {
   FolderOpen,
   ChevronDown,
   Plus,
+  Mic,
+  Music,
 } from "lucide-react";
 import type { ContentNode, CanvasAction } from "@/types/canvas";
 
@@ -77,6 +79,12 @@ type AgentAction = {
   mediaType?: string;
   pageId?: string;
   scheduled?: number;
+  // Reference sheet from photos
+  category?: "character" | "prop" | "environment";
+  imageUrls?: string[];
+  description?: string;
+  // Karaoke voiceover
+  script?: Array<{ startTime: number; endTime: number; text: string }>;
 };
 
 type ChatPanelProps = {
@@ -253,7 +261,28 @@ async function executeAction(
                         });
                       }
                     },
-                    onCompleted: () => {
+                    onCompleted: (event) => {
+                      // WHY: Critic auto-score is included in the completion event.
+                      // Find the scene by index and update its score so the
+                      // InlineVideoCard displays the rating immediately.
+                      const score = event.data.score;
+                      if (score != null) {
+                        // Update via localStorage since we're inside executeAction
+                        try {
+                          const saved = localStorage.getItem("pm-video-projects");
+                          if (saved) {
+                            const entries: [string, { scenes: Array<{ id: string; score?: number }> }][] = JSON.parse(saved);
+                            const updated = entries.map(([id, proj]) => {
+                              if (id !== videoProjectId) return [id, proj] as const;
+                              const updatedScenes = proj.scenes.map((s, idx) =>
+                                idx === i ? { ...s, score } : s,
+                              );
+                              return [id, { ...proj, scenes: updatedScenes }] as const;
+                            });
+                            localStorage.setItem("pm-video-projects", JSON.stringify(updated));
+                          }
+                        } catch { /* ignore */ }
+                      }
                       completedCount++;
                       resolve();
                     },
@@ -521,7 +550,93 @@ async function executeAction(
       return { success: true, detail: `Reference "${action.refLabel}" tagged to scene ${action.sceneIndex + 1}` };
     }
 
+    case "CREATE_REFERENCE_FROM_PHOTOS": {
+      // WHY: Generate a multi-angle reference sheet from user-uploaded photos
+      // via Nano Banana Pro multi-image input. Used when the user has photos
+      // of themselves/their product/their location that should be the source of truth.
+      try {
+        if (!action.imageUrls || action.imageUrls.length === 0) {
+          return { success: false, detail: "No photos provided" };
+        }
+        const res = await fetch("/api/generate/reference-sheet", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageUrls: action.imageUrls,
+            category: action.category ?? "character",
+            label: action.label ?? "Reference",
+            description: action.description,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          return { success: false, detail: err?.error ?? "Reference sheet generation failed" };
+        }
+        const data = await res.json();
+        const generationId = data.generationId;
 
+        // Poll for completion
+        if (generationId) {
+          const { streamGeneration } = await import("@/lib/api");
+          return await new Promise((resolve) => {
+            const cancel = streamGeneration(generationId, {
+              onCompleted: (event) => {
+                const url = event.data.resultUrl;
+                if (url && action.videoProjectId) {
+                  // Auto-add to the video project as a reference image
+                  onCanvasAction({
+                    type: "add-reference-image",
+                    videoProjectId: action.videoProjectId,
+                    url,
+                    label: action.label ?? "Reference",
+                    category: action.category === "environment" ? "scene" : (action.category ?? "character"),
+                  });
+                }
+                resolve({ success: true, detail: `Reference sheet "${action.label}" ready` });
+              },
+              onFailed: () => resolve({ success: false, detail: "Reference sheet generation failed" }),
+              onError: () => resolve({ success: false, detail: "Stream error" }),
+            });
+            setTimeout(() => { cancel(); resolve({ success: false, detail: "Reference generation timed out" }); }, 10 * 60 * 1000);
+          });
+        }
+        return { success: true, detail: "Reference sheet queued" };
+      } catch (err) {
+        return { success: false, detail: err instanceof Error ? err.message : "Failed" };
+      }
+    }
+
+    case "OPEN_KARAOKE": {
+      // WHY: Opens the inline KaraokeRecorder in the VideoEditor with the
+      // timestamped script so the user can record their own voiceover against
+      // the playing video. The script is provided by the AI based on the
+      // generated voiceover content.
+      if (!action.videoProjectId || !action.script || action.script.length === 0) {
+        return { success: false, detail: "Missing videoProjectId or script" };
+      }
+      onCanvasAction({
+        type: "open-karaoke",
+        videoProjectId: action.videoProjectId,
+        script: action.script,
+      });
+      return { success: true, detail: "Karaoke recorder opened" };
+    }
+
+    case "GENERATE_SCORE": {
+      // WHY: Triggers the Sound Director → Lyria 3 pipeline. The frontend
+      // handles the actual call (it has access to the stitched video URL
+      // and scene timing). This action just signals the intent.
+      if (!action.videoProjectId) {
+        return { success: false, detail: "Missing videoProjectId" };
+      }
+      // The VideoEditor watches for this via onCanvasAction and triggers
+      // the Sound Director pipeline directly.
+      onCanvasAction({
+        type: "stitch-video",
+        videoProjectId: action.videoProjectId,
+      });
+      return { success: true, detail: "Score generation triggered" };
+    }
 
     default:
       return { success: false, detail: `Unknown action: ${action.action}` };
@@ -545,6 +660,9 @@ const ACTION_LABELS: Record<string, { label: string; icon: typeof ImageIcon }> =
   SET_SCENE_MODE: { label: "Setting scene mode", icon: Video },
   ADD_REFERENCE_IMAGE: { label: "Adding reference image", icon: ImageIcon },
   TAG_REFERENCE_TO_SCENE: { label: "Tagging reference to scene", icon: ImageIcon },
+  CREATE_REFERENCE_FROM_PHOTOS: { label: "Building reference sheet from photos", icon: ImageIcon },
+  OPEN_KARAOKE: { label: "Opening karaoke recorder", icon: Mic },
+  GENERATE_SCORE: { label: "Composing score", icon: Music },
   SAVE_MEMORY: { label: "Saving memory", icon: Brain },
   DELETE_MEMORY: { label: "Forgetting memory", icon: Brain },
 };
@@ -1304,17 +1422,100 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
                     }))}
                     totalScenes={sceneCount}
                     projectTitle={videoNode.title}
-                    onRegenerate={(sceneId) => {
-                      onCanvasAction({ type: "open-video-editor", videoProjectId: msg.videoProjectId! });
+                    onRegenerate={async (sceneId) => {
+                      // WHY: Inline regenerate — directly call the video API
+                      // for this specific scene rather than opening the editor.
+                      const scene = projectScenes.find((s) => s.id === sceneId);
+                      if (!scene || !msg.videoProjectId) return;
+                      // Mark as regenerating in the project state
+                      onCanvasAction({ type: "generate-video-scene", videoProjectId: msg.videoProjectId, sceneIndex: projectScenes.findIndex((s) => s.id === sceneId) });
+                      try {
+                        const res = await fetch("/api/generate/video", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ prompt: scene.prompt, duration: scene.duration, aspectRatio: "16:9", mode: "t2v" }),
+                        });
+                        if (!res.ok) return;
+                        const data = await res.json();
+                        if (!data.generationId) return;
+                        const { streamGeneration } = await import("@/lib/api");
+                        streamGeneration(data.generationId, {
+                          onCompleted: () => { /* VideoEditor watches the project state */ },
+                        });
+                      } catch { /* fail silently */ }
                     }}
                     onTrimChange={(sceneId, start, end) => {
-                      // Trim updates go through the VideoEditor's project state
+                      // WHY: Trim updates persist via the project state which
+                      // syncs to localStorage; the VideoEditor reads the same state.
+                      const scenes = projectScenes.map((s) =>
+                        s.id === sceneId ? { ...s, trimStart: start, trimEnd: end } : s,
+                      );
+                      // Update localStorage directly so both UIs stay in sync
+                      try {
+                        const saved = localStorage.getItem("pm-video-projects");
+                        if (saved) {
+                          const entries: [string, { scenes: typeof scenes }][] = JSON.parse(saved);
+                          const updated = entries.map(([id, proj]) =>
+                            id === msg.videoProjectId ? [id, { ...proj, scenes }] as const : [id, proj] as const,
+                          );
+                          localStorage.setItem("pm-video-projects", JSON.stringify(updated));
+                        }
+                      } catch { /* ignore */ }
                     }}
                     onStitch={() => {
                       onCanvasAction({ type: "stitch-video", videoProjectId: msg.videoProjectId! });
+                      onCanvasAction({ type: "open-video-editor", videoProjectId: msg.videoProjectId! });
                     }}
-                    onGenerateScore={() => {
-                      // Sound Director pipeline — handled by the stitch preview
+                    onGenerateScore={async () => {
+                      // WHY: Inline Sound Director trigger — fetches current
+                      // stitched URL from project state and runs the pipeline.
+                      const saved = localStorage.getItem("pm-video-projects");
+                      if (!saved) return;
+                      try {
+                        const entries: [string, { audioUrl?: string; scenes: typeof projectScenes }][] = JSON.parse(saved);
+                        const proj = entries.find(([id]) => id === msg.videoProjectId);
+                        if (!proj) return;
+                        // Build scene timing
+                        let currentTime = 0;
+                        const sceneTiming = proj[1].scenes
+                          .filter((s) => s.videoUrl && s.status === "ready")
+                          .map((s, i, arr) => {
+                            const duration = s.trimEnd - s.trimStart;
+                            const startTime = currentTime;
+                            currentTime += duration;
+                            const role = i === 0 ? "stimulation"
+                              : i === arr.length - 1 ? "validation"
+                              : i < arr.length / 2 ? "captivation" : "anticipation";
+                            return { prompt: s.prompt, startTime, endTime: currentTime, attentionRole: role };
+                          });
+                        // Call Sound Director
+                        const directRes = await fetch("/api/proxy/direct-sound", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ scenes: sceneTiming, totalDuration: currentTime, targetEmotion: "engagement" }),
+                        });
+                        if (!directRes.ok) return;
+                        const directData = await directRes.json();
+                        const lyriaPrompt = directData?.data?.lyriaPrompt ?? directData?.lyriaPrompt;
+                        if (!lyriaPrompt) return;
+                        // Generate via Lyria 3
+                        const musicRes = await fetch("/api/generate/music/lyria", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ prompt: lyriaPrompt, duration: Math.ceil(currentTime), model: "pro" }),
+                        });
+                        if (musicRes.ok) {
+                          const musicData = await musicRes.json();
+                          const audioUrl = musicData?.data?.audioUrl ?? musicData?.audioUrl;
+                          if (audioUrl) {
+                            // Update project audioUrl
+                            const updated = entries.map(([id, p]) =>
+                              id === msg.videoProjectId ? [id, { ...p, audioUrl }] as const : [id, p] as const,
+                            );
+                            localStorage.setItem("pm-video-projects", JSON.stringify(updated));
+                          }
+                        }
+                      } catch { /* ignore */ }
                     }}
                   />
                 );
