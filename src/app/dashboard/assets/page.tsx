@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   ImageIcon,
   Video,
@@ -15,7 +15,35 @@ import {
   ExternalLink,
   Film,
   Upload,
+  Pencil,
+  Check,
+  X as XIcon,
 } from "lucide-react";
+
+// WHY: Custom asset names live in localStorage so users can rename uploaded
+// reference sheets ("Jerry", "SneakerPro", etc.) and tag them via @ in chat.
+// Keyed by asset ID. The @ mention popup reads the same key.
+const ASSET_NAMES_KEY = "pm-asset-names";
+
+function getAssetNames(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(localStorage.getItem(ASSET_NAMES_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function setAssetName(id: string, name: string) {
+  if (typeof window === "undefined") return;
+  const names = getAssetNames();
+  if (name.trim()) {
+    names[id] = name.trim();
+  } else {
+    delete names[id];
+  }
+  localStorage.setItem(ASSET_NAMES_KEY, JSON.stringify(names));
+}
 
 type AssetType = "image" | "video" | "audio" | "copy";
 
@@ -76,12 +104,28 @@ function AssetCard({
   onDownload,
   onDelete,
   onSetCategory,
+  customName,
+  onRename,
 }: {
   asset: Asset;
   onDownload: (asset: Asset) => void;
   onDelete: (asset: Asset) => void;
   onSetCategory: (assetId: string, category: string | null) => void;
+  customName: string;
+  onRename: (assetId: string, name: string) => void;
 }) {
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(customName);
+
+  // Sync local input with prop changes
+  useEffect(() => {
+    setNameInput(customName);
+  }, [customName]);
+
+  function commitName() {
+    onRename(asset.id, nameInput);
+    setIsEditingName(false);
+  }
   const typeIcon: Record<AssetType, React.ElementType> = {
     image: ImageIcon,
     video: Video,
@@ -222,7 +266,7 @@ function AssetCard({
       </div>
 
       {/* Meta */}
-      <div className="flex flex-col gap-1 p-3">
+      <div className="flex flex-col gap-1.5 p-3">
         <div className="flex items-center gap-1.5">
           <Icon size={12} strokeWidth={1.5} className="shrink-0 text-ash/60" />
           <span className="text-[10px] uppercase tracking-widest text-ash/60 font-medium">
@@ -232,6 +276,45 @@ function AssetCard({
             {new Date(asset.createdAt).toLocaleDateString()}
           </span>
         </div>
+
+        {/* Editable name — used as the @ mention tag in chat */}
+        {isEditingName ? (
+          <div className="flex items-center gap-1">
+            <input
+              autoFocus
+              type="text"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitName();
+                if (e.key === "Escape") { setNameInput(customName); setIsEditingName(false); }
+              }}
+              onBlur={commitName}
+              placeholder="Name (e.g. Jerry, SneakerPro)"
+              maxLength={50}
+              className="flex-1 rounded bg-slate/50 px-2 py-1 text-xs text-cloud placeholder:text-ash/40 border border-royal/40 outline-none focus:border-royal"
+            />
+            <button
+              onClick={commitName}
+              className="flex h-6 w-6 items-center justify-center rounded text-emerald-400 hover:bg-emerald-500/10 cursor-pointer"
+            >
+              <Check size={12} />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setIsEditingName(true)}
+            className={`flex items-center gap-1.5 rounded px-1.5 py-0.5 text-left transition-colors cursor-pointer hover:bg-slate/40 ${
+              customName ? "text-cloud" : "text-ash/50"
+            }`}
+            title="Click to rename — used as the @ tag in chat"
+          >
+            <span className="text-xs font-medium truncate flex-1">
+              {customName || "+ Add name to @tag"}
+            </span>
+            <Pencil size={10} className="opacity-0 group-hover:opacity-60 shrink-0" />
+          </button>
+        )}
         {/* Category tags */}
         <div className="flex items-center gap-1">
           {CATEGORY_TAGS.map((cat) => (
@@ -267,6 +350,23 @@ export default function AssetsPage() {
   const [search, setSearch] = useState("");
   const [uploading, setUploading] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement>(null);
+
+  // WHY: Custom names per asset for @ tagging in chat. Lazy-init from
+  // localStorage so it survives page reloads.
+  const [customNames, setCustomNames] = useState<Record<string, string>>(getAssetNames);
+
+  const handleRename = useCallback((assetId: string, name: string) => {
+    setCustomNames((prev) => {
+      const next = { ...prev };
+      if (name.trim()) {
+        next[assetId] = name.trim();
+      } else {
+        delete next[assetId];
+      }
+      return next;
+    });
+    setAssetName(assetId, name);
+  }, []);
 
   useEffect(() => {
     async function fetchAssets() {
@@ -506,6 +606,8 @@ export default function AssetsPage() {
                 onDownload={handleDownload}
                 onDelete={handleDelete}
                 onSetCategory={handleSetCategory}
+                customName={customNames[asset.id] ?? ""}
+                onRename={handleRename}
               />
             ))}
           </div>

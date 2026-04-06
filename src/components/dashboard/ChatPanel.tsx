@@ -762,32 +762,50 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
 
   // WHY: Fetch user assets for the @ mention popup in ChatInput.
   // Users type @Name to tag characters, props, environments inline in chat.
+  // Custom names from the Assets page (stored in localStorage) take priority
+  // over the auto-generated prompt-based name.
   type MentionAsset = { id: string; name: string; url: string; type: "character" | "prop" | "environment" | "product" | "image" | "video"; thumbnail?: string };
   const [mentionAssets, setMentionAssets] = useState<MentionAsset[]>([]);
-  useEffect(() => {
+
+  const loadMentionAssets = useCallback(() => {
     fetch("/api/user/assets?limit=30")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((data) => {
         const raw = data?.assets ?? data ?? [];
-        if (Array.isArray(raw)) {
-          setMentionAssets(
-            raw.map((a: { id: string; url: string; type: string; name?: string; prompt?: string; category?: string }) => {
-              const proxyUrl = a.url?.startsWith("https://princemarketing.ai/")
-                ? `/api/proxy/image?url=${encodeURIComponent(a.url)}`
-                : a.url;
-              return {
-                id: a.id,
-                name: a.name || a.prompt?.slice(0, 30) || "Asset",
-                url: a.url,
-                type: (a.category as MentionAsset["type"]) || (a.type === "video" ? "video" : "image"),
-                thumbnail: proxyUrl,
-              };
-            }),
-          );
-        }
+        if (!Array.isArray(raw)) return;
+        // Read custom names from localStorage (set on the Assets page)
+        let customNames: Record<string, string> = {};
+        try {
+          customNames = JSON.parse(localStorage.getItem("pm-asset-names") || "{}");
+        } catch { /* ignore */ }
+        setMentionAssets(
+          raw.map((a: { id: string; url: string; type: string; name?: string; prompt?: string; category?: string }) => {
+            const proxyUrl = a.url?.startsWith("https://princemarketing.ai/")
+              ? `/api/proxy/image?url=${encodeURIComponent(a.url)}`
+              : a.url;
+            return {
+              id: a.id,
+              // Custom name first (e.g. "Jerry"), then API-provided name, then prompt fallback
+              name: customNames[a.id] || a.name || a.prompt?.slice(0, 30) || "Asset",
+              url: a.url,
+              type: (a.category as MentionAsset["type"]) || (a.type === "video" ? "video" : "image"),
+              thumbnail: proxyUrl,
+            };
+          }),
+        );
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    loadMentionAssets();
+    // WHY: Re-read custom names when window regains focus — this handles the
+    // case where the user renames an asset on the Assets page in another tab
+    // and then comes back to chat.
+    function handleFocus() { loadMentionAssets(); }
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [loadMentionAssets]);
 
   // Persist projects to localStorage
   useEffect(() => {
