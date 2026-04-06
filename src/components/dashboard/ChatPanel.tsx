@@ -960,11 +960,24 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
     [onCanvasAction, nodes],
   );
 
-  async function handleSend(content: string) {
+  async function handleSend(content: string, attachments?: Array<{ id: string; url: string; name: string; type: string }>) {
+    // WHY: Inline attachments — when the user uploads images via the
+    // paperclip in chat, append a structured note to the message so the
+    // AI knows exactly which assets are now available to use as references.
+    let finalContent = content;
+    if (attachments && attachments.length > 0) {
+      const list = attachments
+        .map((a) => `- ${a.name} (${a.type}, url: ${a.url})`)
+        .join("\n");
+      finalContent = `${content}\n\n[Just uploaded ${attachments.length} reference file${attachments.length === 1 ? "" : "s"}:\n${list}\n\nUse these as references in any video/image generation. They are saved to the user's library and can be tagged via @ as well.]`;
+      // Refresh the @ mention popup so the new uploads appear immediately
+      loadMentionAssets();
+    }
+
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
-      content,
+      content: finalContent,
     };
     setMessages((prev) => [...prev, userMessage]);
     setIsThinking(true);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Image, Film, Box, MapPin } from "lucide-react";
+import { Send, Image, Film, Box, MapPin, Paperclip, X, Loader2 } from "lucide-react";
 
 // WHY: Asset type for the @ mention popup. These come from the user's
 // uploaded assets, canvas nodes, and reference images — allowing inline
@@ -15,10 +15,22 @@ type MentionAsset = {
 };
 
 type ChatInputProps = {
-  onSend: (message: string) => void;
+  onSend: (message: string, attachments?: UploadedAttachment[]) => void;
   disabled?: boolean;
   placeholder?: string;
   assets?: MentionAsset[];
+  onAttachmentsChange?: (attachments: UploadedAttachment[]) => void;
+};
+
+// WHY: Attachments uploaded inline from chat — they get persisted via the
+// upload endpoint and then attached to the user's message so the AI can
+// reference them in the next response (e.g., for character reference sheets).
+export type UploadedAttachment = {
+  id: string;
+  url: string;
+  name: string;
+  type: "image" | "video";
+  thumbnail?: string;
 };
 
 const TYPE_ICONS = {
@@ -44,9 +56,60 @@ export function ChatInput({
   disabled = false,
   placeholder = "Tell me about your business...",
   assets = [],
+  onAttachmentsChange,
 }: ChatInputProps) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // WHY: Pending attachments — uploaded but not yet sent. Display as
+  // chips above the input. Cleared when the user sends the message.
+  const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFilePick = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    try {
+      const newAttachments: UploadedAttachment[] = [];
+      for (const file of Array.from(files)) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("label", file.name);
+        formData.append("category", "reference");
+        const res = await fetch("/api/upload/image", { method: "POST", body: formData });
+        if (!res.ok) continue;
+        const data = await res.json();
+        const result = data?.data ?? data;
+        if (result?.id && result?.url) {
+          newAttachments.push({
+            id: result.id,
+            url: result.url,
+            name: result.label || file.name,
+            type: result.type === "video" ? "video" : "image",
+            thumbnail: result.url.startsWith("https://princemarketing.ai/")
+              ? `/api/proxy/image?url=${encodeURIComponent(result.url)}`
+              : result.url,
+          });
+        }
+      }
+      if (newAttachments.length > 0) {
+        const updated = [...attachments, ...newAttachments];
+        setAttachments(updated);
+        onAttachmentsChange?.(updated);
+      }
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }, [attachments, onAttachmentsChange]);
+
+  const removeAttachment = useCallback((id: string) => {
+    const updated = attachments.filter((a) => a.id !== id);
+    setAttachments(updated);
+    onAttachmentsChange?.(updated);
+  }, [attachments, onAttachmentsChange]);
 
   // @ mention state
   const [showMentions, setShowMentions] = useState(false);
@@ -105,10 +168,13 @@ export function ChatInput({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = value.trim();
-    if (!trimmed || disabled) return;
+    // Allow sending if there's text OR attachments
+    if ((!trimmed && attachments.length === 0) || disabled) return;
 
-    onSend(trimmed);
+    onSend(trimmed || `[Uploaded ${attachments.length} file${attachments.length === 1 ? "" : "s"}]`, attachments);
     setValue("");
+    setAttachments([]);
+    onAttachmentsChange?.([]);
     setShowMentions(false);
 
     if (textareaRef.current) {
@@ -223,10 +289,57 @@ export function ChatInput({
         </div>
       )}
 
+      {/* Attachment chips — show pending uploads above the input */}
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-smoke bg-graphite/80 px-4 pt-2">
+          {attachments.map((att) => (
+            <div key={att.id} className="relative group flex items-center gap-2 rounded-lg border border-royal/30 bg-royal/10 px-2 py-1">
+              {att.thumbnail ? (
+                <img src={att.thumbnail} alt={att.name} className="h-7 w-7 rounded object-cover" />
+              ) : (
+                <div className="flex h-7 w-7 items-center justify-center rounded bg-slate/50">
+                  <Image size={12} className="text-ash" />
+                </div>
+              )}
+              <span className="text-[10px] font-medium text-cloud max-w-[100px] truncate">{att.name}</span>
+              <button
+                onClick={() => removeAttachment(att.id)}
+                className="ml-1 flex h-4 w-4 items-center justify-center rounded-full text-ash hover:text-coral hover:bg-coral/10 cursor-pointer"
+                aria-label="Remove attachment"
+              >
+                <X size={10} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <form
         onSubmit={handleSubmit}
         className="flex items-end gap-2 border-t border-smoke bg-graphite px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
       >
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,video/*"
+          multiple
+          className="hidden"
+          onChange={handleFilePick}
+        />
+
+        {/* Paperclip — upload reference images directly in chat */}
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disabled || uploading}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-ash hover:text-cloud hover:bg-slate/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+          aria-label="Upload reference"
+          title="Upload reference image"
+        >
+          {uploading ? <Loader2 size={16} className="animate-spin" /> : <Paperclip size={16} strokeWidth={1.5} />}
+        </button>
+
         <textarea
           ref={textareaRef}
           value={value}
@@ -244,7 +357,7 @@ export function ChatInput({
         />
         <button
           type="submit"
-          disabled={disabled || !value.trim()}
+          disabled={disabled || (!value.trim() && attachments.length === 0)}
           className="
             flex h-9 w-9 shrink-0 items-center justify-center rounded-lg
             bg-royal text-white

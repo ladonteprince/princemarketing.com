@@ -436,21 +436,46 @@ export default function AssetsPage() {
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
     setUploading(true);
     try {
-      const blobUrl = URL.createObjectURL(file);
-      const isVideo = file.type.startsWith("video/");
-      const newAsset: Asset = {
-        id: crypto.randomUUID(),
-        type: isVideo ? "video" : "image",
-        status: "completed",
-        url: blobUrl,
-        prompt: file.name,
-        createdAt: new Date().toISOString(),
-      };
-      setAssets((prev) => [newAsset, ...prev]);
+      // WHY: Upload each file to the .ai backend so it persists to the
+      // VPS uploads directory and creates a Generation record. The previous
+      // implementation only created a blob URL which vanished on refresh.
+      const uploaded: Asset[] = [];
+      for (const file of Array.from(files)) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("label", file.name);
+        formData.append("category", "reference");
+
+        const res = await fetch("/api/upload/image", {
+          method: "POST",
+          body: formData,
+        });
+        if (!res.ok) {
+          console.error("Upload failed:", await res.text());
+          continue;
+        }
+        const data = await res.json();
+        const result = data?.data ?? data;
+        if (result?.id && result?.url) {
+          uploaded.push({
+            id: result.id,
+            type: result.type === "video" ? "video" : "image",
+            status: "completed",
+            url: result.url,
+            prompt: result.label || file.name,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      }
+      if (uploaded.length > 0) {
+        setAssets((prev) => [...uploaded, ...prev]);
+      }
+    } catch (err) {
+      console.error("Upload error:", err);
     } finally {
       setUploading(false);
       if (uploadInputRef.current) uploadInputRef.current.value = "";
@@ -552,6 +577,7 @@ export default function AssetsPage() {
               ref={uploadInputRef}
               type="file"
               accept="image/*,video/*"
+              multiple
               className="hidden"
               onChange={handleUpload}
             />
