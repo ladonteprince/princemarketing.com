@@ -112,6 +112,12 @@ type StatusUpdate = { progress?: number; stage?: string; detail?: string };
 // and only resolves when the user clicks the Approve button on the inline
 // video card. In Auto Mode, waitForApproval is undefined and the loop runs
 // straight through.
+//
+// pendingReferences contains ALL ADD_REFERENCE_IMAGE actions from the same
+// AI batch — pre-extracted by processActions BEFORE the loop runs. CREATE_VIDEO
+// passes them to the Seedance API so the video actually uses the @LaDonte tag.
+// Without this, references would only land in local state AFTER generation
+// already started.
 async function executeAction(
   action: AgentAction,
   onCanvasAction: (action: CanvasAction) => void,
@@ -119,6 +125,7 @@ async function executeAction(
   statusCallback?: (update: StatusUpdate) => void,
   stepMode?: boolean,
   waitForApproval?: (sceneIndex: number) => Promise<void>,
+  pendingReferences?: Array<{ url: string; label: string }>,
 ): Promise<{ success: boolean; detail: string; nodeRef?: string; videoProjectId?: string }> {
   switch (action.action) {
     case "CREATE_IMAGE": {
@@ -260,19 +267,31 @@ async function executeAction(
               }
             } catch { /* ignore */ }
 
+            // WHY: If references are pending from ADD_REFERENCE_IMAGE actions
+            // in the same AI batch, switch to character mode (omni-reference)
+            // and pass the references to Seedance. Otherwise the @LaDonte tag
+            // is silently ignored and we get a generic person.
+            const hasReferences = pendingReferences && pendingReferences.length > 0;
             const videoMode = action.mode
               ?? (action.sourceImage ? "i2v" : undefined)
               ?? (action.sourceVideo ? "extend" : undefined)
-              ?? "t2v";
+              ?? (hasReferences ? "character" : "t2v");
 
             const videoPayload: Record<string, unknown> = {
               prompt: scene.prompt,
               duration: scene.duration ?? 5,
               aspectRatio: "16:9",
               mode: videoMode,
+              // WHY: Music is a post-production layer added by Sound Director +
+              // Lyria 3 after stitching. Each scene must be SILENT so the score
+              // doesn't fight with baked-in music tracks.
+              includeAudio: false,
             };
             if (action.sourceImage) videoPayload.sourceImage = action.sourceImage;
             if (action.sourceVideo) videoPayload.sourceVideo = action.sourceVideo;
+            if (hasReferences) {
+              videoPayload.referenceImages = pendingReferences;
+            }
 
             try {
               const res = await fetch("/api/generate/video", {
@@ -1008,6 +1027,15 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
     ): Promise<string[]> => {
       const allNodeRefs: string[] = [];
 
+      // WHY: Pre-extract ADD_REFERENCE_IMAGE actions so CREATE_VIDEO can pass
+      // the references DIRECTLY to the Seedance API on its first call. Without
+      // this, references would only land in local state AFTER generation
+      // already started — meaning the @LaDonte tag would be silently dropped
+      // and we'd get generic videos with no character consistency.
+      const pendingReferences: Array<{ url: string; label: string }> = agentActions
+        .filter((a) => a.action === "ADD_REFERENCE_IMAGE" && a.url && a.label)
+        .map((a) => ({ url: String(a.url), label: String(a.label) }));
+
       // WHY: When the AI outputs CREATE_VIDEO + ADD_REFERENCE_IMAGE + TAG_REFERENCE_TO_SCENE
       // in the same response, it uses placeholders ("auto"/"current"/"latest") for the
       // videoProjectId because it doesn't know the UUID yet. Pre-process the actions
@@ -1092,9 +1120,9 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
             );
           };
 
-          // WHY: Pass the LIVE creationMode (via ref) and the waitForApproval
-          // gating function so executeAction can pause CREATE_VIDEO loops
-          // mid-flight in Step Mode.
+          // WHY: Pass the LIVE creationMode (via ref), the waitForApproval
+          // gating function (Step Mode), AND the pre-extracted references
+          // so CREATE_VIDEO can pass them to the Seedance API directly.
           const isStepMode = creationModeRef.current === "step";
           result = await executeAction(
             preprocessed[i],
@@ -1103,6 +1131,7 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
             statusCallback,
             isStepMode,
             isStepMode ? waitForApproval : undefined,
+            pendingReferences,
           );
         }
 
