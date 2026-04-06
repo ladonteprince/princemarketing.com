@@ -157,7 +157,13 @@ async function executeAction(
     case "CREATE_VIDEO": {
       try {
         const id = crypto.randomUUID();
-        const videoProjectId = crypto.randomUUID();
+        // WHY: Use pre-assigned videoProjectId from processActions if present
+        // (set so subsequent ADD_REFERENCE_IMAGE / TAG_REFERENCE_TO_SCENE actions
+        // can target this exact project), otherwise generate a fresh one.
+        const videoProjectId =
+          action.videoProjectId && action.videoProjectId !== "auto" && action.videoProjectId !== "current" && action.videoProjectId !== "latest"
+            ? String(action.videoProjectId)
+            : crypto.randomUUID();
         let yPos = 60;
         for (const n of nodes) {
           if (n.position.y + 200 > yPos) yPos = n.position.y + 200;
@@ -875,8 +881,35 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
     ): Promise<string[]> => {
       const allNodeRefs: string[] = [];
 
+      // WHY: When the AI outputs CREATE_VIDEO + ADD_REFERENCE_IMAGE + TAG_REFERENCE_TO_SCENE
+      // in the same response, it uses placeholders ("auto"/"current"/"latest") for the
+      // videoProjectId because it doesn't know the UUID yet. Pre-process the actions
+      // to substitute these placeholders with actual UUIDs:
+      // 1. For CREATE_VIDEO: pre-generate a UUID so the same one can be used by tags
+      // 2. For dependent actions: replace placeholders with the most recent CREATE_VIDEO's ID
+      const preprocessed = [...agentActions];
+      let mostRecentVideoId: string | null = null;
+      const PLACEHOLDER_IDS = new Set(["auto", "current", "latest"]);
+
+      for (let i = 0; i < preprocessed.length; i++) {
+        const a = preprocessed[i];
+        if (a.action === "CREATE_VIDEO") {
+          // Pre-assign a UUID so reference actions can target it
+          if (!a.videoProjectId || PLACEHOLDER_IDS.has(String(a.videoProjectId))) {
+            a.videoProjectId = crypto.randomUUID();
+          }
+          mostRecentVideoId = String(a.videoProjectId);
+        } else if (
+          a.videoProjectId &&
+          PLACEHOLDER_IDS.has(String(a.videoProjectId)) &&
+          mostRecentVideoId
+        ) {
+          a.videoProjectId = mostRecentVideoId;
+        }
+      }
+
       // Initialize action statuses
-      const statuses: ActionStatus[] = agentActions.map((a) => ({
+      const statuses: ActionStatus[] = preprocessed.map((a) => ({
         action: a.action,
         label: ACTION_LABELS[a.action]?.label ?? a.action,
         status: "pending" as const,
@@ -889,7 +922,7 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
       );
 
       // Execute actions sequentially so each can reference prior canvas state
-      for (let i = 0; i < agentActions.length; i++) {
+      for (let i = 0; i < preprocessed.length; i++) {
         // Mark current as running
         statuses[i].status = "running";
         setMessages((prev) =>
@@ -901,12 +934,12 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
         let result: { success: boolean; detail: string; nodeRef?: string; videoProjectId?: string };
 
         // Handle SAVE_MEMORY and DELETE_MEMORY inline since they need access to setMemories
-        if (agentActions[i].action === "SAVE_MEMORY") {
+        if (preprocessed[i].action === "SAVE_MEMORY") {
           const newMemory: AIMemory = {
             id: crypto.randomUUID(),
-            type: (agentActions[i].type as AIMemory["type"]) ?? "brand",
-            title: agentActions[i].title ?? "Memory",
-            content: agentActions[i].content ?? "",
+            type: (preprocessed[i].type as AIMemory["type"]) ?? "brand",
+            title: preprocessed[i].title ?? "Memory",
+            content: preprocessed[i].content ?? "",
             createdAt: new Date().toISOString(),
           };
           setMemories((prev) => {
@@ -915,8 +948,8 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
             return [...filtered, newMemory];
           });
           result = { success: true, detail: `Remembered: ${newMemory.title}` };
-        } else if (agentActions[i].action === "DELETE_MEMORY") {
-          const title = agentActions[i].title ?? "";
+        } else if (preprocessed[i].action === "DELETE_MEMORY") {
+          const title = preprocessed[i].title ?? "";
           setMemories((prev) => prev.filter((m) => m.title.toLowerCase() !== title.toLowerCase()));
           result = { success: true, detail: `Forgot: ${title}` };
         } else {
@@ -932,7 +965,7 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
             );
           };
 
-          result = await executeAction(agentActions[i], onCanvasAction, nodes, statusCallback);
+          result = await executeAction(preprocessed[i], onCanvasAction, nodes, statusCallback);
         }
 
         statuses[i].status = result.success ? "done" : "error";

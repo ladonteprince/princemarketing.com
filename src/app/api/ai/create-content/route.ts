@@ -231,39 +231,74 @@ export async function POST(request: Request) {
       : "")
     + (creationMode === "plan"
       ? `\n\nCREATION MODE: PLAN
+You are in PLAN MODE. Your job is to BUILD THE COMPLETE PLAN in writing — DO NOT generate any scenes yet. No CREATE_VIDEO actions in plan mode.
+
 When the user asks you to create a video or commercial:
-1. Break it into individual scenes based on the Attention Architecture:
-   - Scene 1 = STIMULATION (scroll-stop opening with motion + contrast)
-   - Middle scenes = ANTICIPATION (build tension, visual foreshadowing)
-   - Final scene = VALIDATION + REVELATION (payoff + brand positioning)
-2. Present Scene 1 ONLY with a detailed description and CREATE_VIDEO action containing just 1 scene
-3. Explain the psychological purpose of the scene (e.g. "This is the Stimulation frame — designed to stop the scroll with high-contrast motion")
-4. Wait for user approval ("approved", "looks good", "next") or revision requests
-5. Only after approval, present the next scene
-6. After the last scene is approved, offer to Stitch & Export
+1. Build the FULL scene-by-scene plan as a written outline (no actions, just text)
+2. Each scene includes:
+   - Scene number + Attention Architecture role (STIMULATION / CAPTIVATION / ANTICIPATION / VALIDATION / REVELATION)
+   - Visual description (what the camera sees)
+   - Duration estimate
+   - References needed (which @assets are used)
+   - Why this scene works (the neurochemical/psychological purpose)
+3. End your message with EXACTLY this format:
+   "---
+   **Plan complete.** Ready to begin?
+   - To execute: switch to **Auto Mode** (Shift+Tab) or say **'execute'**
+   - To revise: tell me what to change
+   - To continue planning: ask more questions"
+4. NEVER output a CREATE_VIDEO action in Plan Mode. The user must explicitly switch modes or say "execute" first.
+5. If the user says "execute" or "go" or "do it", THEN output the full CREATE_VIDEO + ADD_REFERENCE_IMAGE + TAG_REFERENCE_TO_SCENE actions to start generation.
 
 Example flow:
-User: "Make a 15-second sneaker commercial"
-You: "Scene 1 of 3 — STIMULATION FRAME: Close-up of the sneaker on a reflective surface, dramatic backlighting, camera pushes in. This is designed to stop the scroll in the first 2 seconds."
-[CREATE_VIDEO with 1 scene]
-User: "Approved"
-You: "Scene 2 of 3 — ANTICIPATION BUILD: Model walks through urban setting in slow motion. Visual foreshadowing — the sneaker catches light at an unusual angle."
-[ADD_VIDEO_SCENE with scene 2]
-...`
+User: "Make a 15-second sneaker commercial with @SneakerPro"
+You: "Here's the plan for your 15-second sneaker commercial:
+
+**Scene 1 (0-5s) — STIMULATION FRAME**
+ECU of @SneakerPro on reflective surface. Dramatic backlighting reveals the silhouette. Camera pushes in aggressively. Stinger SFX on reveal.
+*Why: Bottom-up attentional capture via high-contrast motion. Triggers norepinephrine spike (amygdala → LC → NE pathway).*
+
+**Scene 2 (5-10s) — ANTICIPATION BUILD**
+Model walks through urban setting in slow-motion. @SneakerPro catches light at unusual angle. Rising ostinato underscore.
+*Why: Predictive processing — building tension through visual foreshadowing.*
+
+**Scene 3 (10-15s) — VALIDATION + REVELATION**
+Hero shot of @SneakerPro. Logo reveal with brand leitmotif. Warm lighting shift.
+*Why: Reward prediction error resolution. Endorphin release via crescendo + warm color.*
+
+---
+**Plan complete.** Ready to begin?
+- To execute: switch to **Auto Mode** (Shift+Tab) or say **'execute'**
+- To revise: tell me what to change
+- To continue planning: ask more questions"
+
+[NO ACTION BLOCKS — wait for user to confirm execution]`
       : creationMode === "auto"
         ? `\n\nCREATION MODE: AUTO
-When the user asks you to create a video or commercial:
-1. Create ALL scenes in a single CREATE_VIDEO action with the full scenes array
-2. Scenes are generated SEQUENTIALLY by the frontend — one at a time, not in parallel
-3. Structure scenes using the Attention Architecture:
-   - Scene 1: STIMULATION (scroll-stop, motion + contrast)
-   - Middle scenes: ANTICIPATION (tension build, foreshadowing)
-   - Final scene: VALIDATION + REVELATION (payoff + brand close)
-4. The frontend streams progress for each scene in order
-5. After all scenes complete, offer to Stitch & Export
+You are in AUTO MODE. Skip all clarifying questions if the user has already tagged references with @ in their message. Just execute.
 
-The user wants hands-off generation. Do not ask for approval — just execute.
-IMPORTANT: Even though you output all scenes at once, the frontend generates them one by one to avoid API failures.`
+When the user asks you to create a video or commercial:
+1. Output ALL scenes in a single CREATE_VIDEO action with the full scenes array
+2. Use placeholder "auto" for videoProjectId in CREATE_VIDEO — the frontend will assign a UUID
+3. Use the SAME placeholder "auto" for videoProjectId in ADD_REFERENCE_IMAGE and TAG_REFERENCE_TO_SCENE actions in the same response — the frontend substitutes them with the actual UUID
+4. Output ALL three action types in the same response: CREATE_VIDEO + ADD_REFERENCE_IMAGE (one per @asset) + TAG_REFERENCE_TO_SCENE (one per scene-asset link)
+5. Structure scenes using Attention Architecture (STIMULATION → ANTICIPATION → VALIDATION → REVELATION)
+6. The frontend generates scenes SEQUENTIALLY (one at a time, not parallel — prevents API overload)
+7. After all scenes complete, the Sound Director auto-generates the score via Lyria 3
+8. After audio is ready, offer Karaoke Mode for voiceover
+
+CRITICAL: Use the literal string "auto" for videoProjectId across all related actions in the same response. Example:
+\`\`\`action
+{"action": "CREATE_VIDEO", "videoProjectId": "auto", "prompt": "...", "scenes": [...]}
+\`\`\`
+\`\`\`action
+{"action": "ADD_REFERENCE_IMAGE", "videoProjectId": "auto", "url": "https://...", "label": "LaDonte"}
+\`\`\`
+\`\`\`action
+{"action": "TAG_REFERENCE_TO_SCENE", "videoProjectId": "auto", "sceneIndex": 0, "refLabel": "LaDonte"}
+\`\`\`
+
+The user wants hands-off generation. Do not ask for approval — just execute.`
         : "");
 
     // Audit log: track what went into the system prompt (metadata only, no PII)

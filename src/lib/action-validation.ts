@@ -108,40 +108,51 @@ const DistributeAction = z.object({
 // WHY: These actions let the AI fully control the video editor workflow —
 // triggering generation, extending scenes, stitching, and managing references.
 
+// WHY: videoProjectId may be a UUID OR the literal "auto"/"current" — the AI
+// uses these placeholders when outputting multiple actions in the same response
+// (CREATE_VIDEO + ADD_REFERENCE_IMAGE + TAG_REFERENCE_TO_SCENE). The frontend
+// substitutes these placeholders with the actual videoProjectId at execution time.
+const VideoProjectIdSchema = z.union([
+  z.string().uuid(),
+  z.literal("auto"),
+  z.literal("current"),
+  z.literal("latest"),
+]);
+
 const GenerateVideoSceneAction = z.object({
   action: z.literal("GENERATE_VIDEO_SCENE"),
-  videoProjectId: z.string().uuid(),
+  videoProjectId: VideoProjectIdSchema,
   sceneIndex: z.number().int().min(0).max(50),
 });
 
 const ExtendVideoSceneAction = z.object({
   action: z.literal("EXTEND_VIDEO_SCENE"),
-  videoProjectId: z.string().uuid(),
+  videoProjectId: VideoProjectIdSchema,
   sceneIndex: z.number().int().min(0).max(50),
 });
 
 const StitchVideoAction = z.object({
   action: z.literal("STITCH_VIDEO"),
-  videoProjectId: z.string().uuid(),
+  videoProjectId: VideoProjectIdSchema,
 });
 
 const SetSceneModeAction = z.object({
   action: z.literal("SET_SCENE_MODE"),
-  videoProjectId: z.string().uuid(),
+  videoProjectId: VideoProjectIdSchema,
   sceneIndex: z.number().int().min(0).max(50),
   mode: z.enum(["t2v", "i2v", "character", "extend"]),
 });
 
 const AddReferenceImageAction = z.object({
   action: z.literal("ADD_REFERENCE_IMAGE"),
-  videoProjectId: z.string().uuid(),
+  videoProjectId: VideoProjectIdSchema,
   url: z.string().url(),
   label: z.string().max(100),
 });
 
 const TagReferenceToSceneAction = z.object({
   action: z.literal("TAG_REFERENCE_TO_SCENE"),
-  videoProjectId: z.string().uuid(),
+  videoProjectId: VideoProjectIdSchema,
   sceneIndex: z.number().int().min(0).max(50),
   refLabel: z.string().max(100),
 });
@@ -174,7 +185,7 @@ const CreateReferenceFromPhotosAction = z.object({
   label: z.string().max(100),
   imageUrls: z.array(z.string().url()).min(1).max(20),
   description: z.string().max(500).optional(),
-  videoProjectId: z.string().uuid().optional(),
+  videoProjectId: VideoProjectIdSchema.optional(),
 });
 
 // --- Karaoke Voiceover Recording ---
@@ -182,7 +193,7 @@ const CreateReferenceFromPhotosAction = z.object({
 // against a timestamped script while watching the video play.
 const OpenKaraokeAction = z.object({
   action: z.literal("OPEN_KARAOKE"),
-  videoProjectId: z.string().uuid(),
+  videoProjectId: VideoProjectIdSchema,
   script: z.array(z.object({
     startTime: z.number().min(0),
     endTime: z.number().min(0),
@@ -196,7 +207,7 @@ const OpenKaraokeAction = z.object({
 // generates the music with timestamp-controlled scoring.
 const GenerateScoreAction = z.object({
   action: z.literal("GENERATE_SCORE"),
-  videoProjectId: z.string().uuid(),
+  videoProjectId: VideoProjectIdSchema,
 });
 
 // --- Memory Actions ---
