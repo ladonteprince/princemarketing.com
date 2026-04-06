@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { InlineVideoSet } from "@/components/chat/InlineVideoCard";
+import InlineProductPicker from "@/components/chat/InlineProductPicker";
 import { ThinkingDots } from "@/components/ui/ThinkingDots";
 import { Badge } from "@/components/ui/Badge";
 import {
@@ -28,6 +29,7 @@ import {
   Plus,
   Mic,
   Music,
+  ShoppingBag,
 } from "lucide-react";
 import type { ContentNode, CanvasAction } from "@/types/canvas";
 
@@ -38,6 +40,20 @@ type Message = {
   nodeRefs?: string[]; // IDs of nodes created by this message
   actionStatuses?: ActionStatus[];
   videoProjectId?: string; // Links to a video project for inline rendering
+  // WHY: Product search results attached to this message for inline picker rendering.
+  productSearch?: {
+    query: string;
+    label: string;
+    category?: "character" | "prop" | "environment";
+    videoProjectId?: string;
+    products: Array<{
+      imageUrl: string;
+      title: string;
+      sourceUrl: string;
+      sourceDomain: string;
+      price?: string;
+    }>;
+  };
 };
 
 type ActionStatus = {
@@ -85,6 +101,8 @@ type AgentAction = {
   description?: string;
   // Karaoke voiceover
   script?: Array<{ startTime: number; endTime: number; text: string }>;
+  // Product search (Firecrawl + browser fallback)
+  query?: string;
 };
 
 type ChatPanelProps = {
@@ -126,7 +144,19 @@ async function executeAction(
   stepMode?: boolean,
   waitForApproval?: (sceneIndex: number) => Promise<void>,
   pendingReferences?: Array<{ url: string; label: string }>,
-): Promise<{ success: boolean; detail: string; nodeRef?: string; videoProjectId?: string }> {
+): Promise<{
+  success: boolean;
+  detail: string;
+  nodeRef?: string;
+  videoProjectId?: string;
+  productSearch?: {
+    query: string;
+    label: string;
+    category?: "character" | "prop" | "environment";
+    videoProjectId?: string;
+    products: Array<{ imageUrl: string; title: string; sourceUrl: string; sourceDomain: string; price?: string }>;
+  };
+}> {
   switch (action.action) {
     case "CREATE_IMAGE": {
       try {
@@ -661,6 +691,46 @@ async function executeAction(
       return { success: true, detail: `Reference "${action.refLabel}" tagged to scene ${action.sceneIndex + 1}` };
     }
 
+    case "FIND_PRODUCT": {
+      // WHY: Search the real web for actual products via Firecrawl (with
+      // Playwright browser fallback for sites that block scraping). Returns
+      // up to 5 product cards that the user picks inline in the chat. The
+      // selected product gets auto-tagged as a reference image.
+      if (!action.query || !action.label) {
+        return { success: false, detail: "Missing query or label" };
+      }
+      try {
+        const res = await fetch("/api/research/find-product", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: action.query, limit: 5 }),
+        });
+        if (!res.ok) {
+          return { success: false, detail: "Product search failed" };
+        }
+        const data = await res.json();
+        const products = data.products ?? [];
+        if (products.length === 0) {
+          return { success: false, detail: `No products found for "${action.query}"` };
+        }
+        return {
+          success: true,
+          detail: `Found ${products.length} products for "${action.query}" — pick one to use as a reference`,
+          productSearch: {
+            query: action.query,
+            label: action.label,
+            category: action.category,
+            videoProjectId: action.videoProjectId && action.videoProjectId !== "auto" && action.videoProjectId !== "current" && action.videoProjectId !== "latest"
+              ? String(action.videoProjectId)
+              : undefined,
+            products,
+          },
+        };
+      } catch (err) {
+        return { success: false, detail: err instanceof Error ? err.message : "Product search failed" };
+      }
+    }
+
     case "CREATE_REFERENCE_FROM_PHOTOS": {
       // WHY: Generate a multi-angle reference sheet from user-uploaded photos
       // via Nano Banana Pro multi-image input. Used when the user has photos
@@ -771,6 +841,7 @@ const ACTION_LABELS: Record<string, { label: string; icon: typeof ImageIcon }> =
   SET_SCENE_MODE: { label: "Setting scene mode", icon: Video },
   ADD_REFERENCE_IMAGE: { label: "Adding reference image", icon: ImageIcon },
   TAG_REFERENCE_TO_SCENE: { label: "Tagging reference to scene", icon: ImageIcon },
+  FIND_PRODUCT: { label: "Searching the web for products", icon: ShoppingBag },
   CREATE_REFERENCE_FROM_PHOTOS: { label: "Building reference sheet from photos", icon: ImageIcon },
   OPEN_KARAOKE: { label: "Opening karaoke recorder", icon: Mic },
   GENERATE_SCORE: { label: "Composing score", icon: Music },
@@ -1086,7 +1157,19 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
           ),
         );
 
-        let result: { success: boolean; detail: string; nodeRef?: string; videoProjectId?: string };
+        let result: {
+          success: boolean;
+          detail: string;
+          nodeRef?: string;
+          videoProjectId?: string;
+          productSearch?: {
+            query: string;
+            label: string;
+            category?: "character" | "prop" | "environment";
+            videoProjectId?: string;
+            products: Array<{ imageUrl: string; title: string; sourceUrl: string; sourceDomain: string; price?: string }>;
+          };
+        };
 
         // Handle SAVE_MEMORY and DELETE_MEMORY inline since they need access to setMemories
         if (preprocessed[i].action === "SAVE_MEMORY") {
@@ -1149,6 +1232,8 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
                   nodeRefs: [...allNodeRefs],
                   // WHY: Attach videoProjectId so InlineVideoSet can render scenes inline
                   ...(result.videoProjectId ? { videoProjectId: result.videoProjectId } : {}),
+                  // WHY: Attach productSearch results so InlineProductPicker can render
+                  ...(result.productSearch ? { productSearch: result.productSearch } : {}),
                 }
               : m,
           ),
@@ -1620,6 +1705,45 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
                     );
                   })}
                 </div>
+              )}
+
+              {/* WHY: Inline product picker — renders the FIND_PRODUCT search
+                  results as a tap-to-select grid. On select, auto-fires
+                  ADD_REFERENCE_IMAGE so the chosen product becomes a usable
+                  @-mention in subsequent video generations. */}
+              {msg.productSearch && (
+                <InlineProductPicker
+                  query={msg.productSearch.query}
+                  label={msg.productSearch.label}
+                  products={msg.productSearch.products}
+                  onSelect={async (product, label) => {
+                    // Resolve the active video project — use the one attached
+                    // to the search if known, otherwise fall back to the most
+                    // recent video project in canvas state.
+                    let targetProjectId = msg.productSearch?.videoProjectId;
+                    if (!targetProjectId) {
+                      const recentVideoNode = [...nodes]
+                        .reverse()
+                        .find((n) => n.type === "video" && n.videoProjectId);
+                      targetProjectId = recentVideoNode?.videoProjectId;
+                    }
+                    if (!targetProjectId) {
+                      // No active video project — just add to project canvas as a
+                      // standalone reference (the user can attach later)
+                      return;
+                    }
+                    const category = (msg.productSearch?.category === "environment"
+                      ? "scene"
+                      : msg.productSearch?.category) as "character" | "prop" | "scene" | undefined;
+                    onCanvasAction({
+                      type: "add-reference-image",
+                      videoProjectId: targetProjectId,
+                      url: product.imageUrl,
+                      label,
+                      category,
+                    });
+                  }}
+                />
               )}
 
               {/* WHY: Inline video cards — renders scene clips directly in the chat

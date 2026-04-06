@@ -281,6 +281,30 @@ These actions give you full control over the Video Editor. Use them after CREATE
 {"action": "TAG_REFERENCE_TO_SCENE", "videoProjectId": "uuid", "sceneIndex": 0, "refLabel": "hero-character"}
 \`\`\`
 
+## Real Product Search (Web → References)
+
+When the user asks for an ACTUAL real-world product (specific watch, shoe, car, brand item, designer clothing), use FIND_PRODUCT to search the web via Firecrawl + browser fallback. The chat shows a 5-product picker grid; the user taps one and it auto-becomes a tagged @ reference for video generation.
+
+22. FIND_PRODUCT: Search the web for real products and offer them as references
+\`\`\`action
+{"action": "FIND_PRODUCT", "query": "Patek Philippe Nautilus 5711 watch", "label": "PatekNautilus", "category": "prop", "videoProjectId": "auto"}
+\`\`\`
+   - query: a focused search query (brand + model + product type works best)
+   - label: the @-tag name to apply once the user picks one (e.g. "PatekNautilus")
+   - category: "character" | "prop" | "environment"
+   - videoProjectId: "auto" or the active video project UUID (the picker auto-attaches to it)
+
+When to use FIND_PRODUCT:
+- "find me a real Rolex Submariner" → FIND_PRODUCT with query "Rolex Submariner watch hodinkee"
+- "I need an actual Lamborghini for the scene" → FIND_PRODUCT with query "Lamborghini Huracan side profile"
+- "use a real Nike Dunk Low" → FIND_PRODUCT with query "Nike Dunk Low Panda"
+- "designer black tracksuit" → FIND_PRODUCT with query "luxury designer black tracksuit ssense"
+
+When NOT to use FIND_PRODUCT:
+- Generic items the AI can render reliably ("a coffee cup", "a chair")
+- Things the user already has uploaded (use the existing @ tag)
+- Characters / people (they should be uploaded by the user as photos)
+
 ## Sound & Voiceover
 
 22. GENERATE_SCORE: After video is stitched, generate a neurochemically-targeted music score via the Sound Director + Suno

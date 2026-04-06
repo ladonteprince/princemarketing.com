@@ -176,6 +176,20 @@ const ScoreContentAction = z.object({
   format: z.enum(["short-form", "long-form", "ad", "caption", "email", "landing-page"]).optional(),
 });
 
+// --- Product Search (Firecrawl + Browser Fallback) ---
+// WHY: The AI can search the real web for actual products (watches,
+// clothes, cars) to use as references for video generation. Returns
+// up to 5 product cards that the user picks from inline in the chat.
+// Selected product gets auto-tagged as a reference image so it can be
+// @-mentioned in scene prompts.
+const FindProductAction = z.object({
+  action: z.literal("FIND_PRODUCT"),
+  query: z.string().min(2).max(200),
+  label: z.string().max(100),
+  category: z.enum(["character", "prop", "environment"]).optional(),
+  videoProjectId: VideoProjectIdSchema.optional(),
+});
+
 // --- Multi-Image Reference Sheet Creation ---
 // WHY: When the user has photos of themselves/their product/their location,
 // generate a reference sheet from those photos via Nano Banana Pro multi-image input.
@@ -244,6 +258,7 @@ export const ActionBlockSchema = z.discriminatedUnion("action", [
   DistributeAction,
   GetAdsAnalyticsAction,
   ScoreContentAction,
+  FindProductAction,
   CreateReferenceFromPhotosAction,
   OpenKaraokeAction,
   GenerateScoreAction,
