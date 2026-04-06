@@ -36,6 +36,7 @@ import type {
 } from "@/types/canvas";
 import { TimelineView } from "./TimelineView";
 import { KaraokeRecorder } from "./KaraokeRecorder";
+import LockEndpointsPanel from "./LockEndpointsPanel";
 import { streamGeneration } from "@/lib/api";
 
 /* ─── Props ─────────────────────────────────────────────────────────── */
@@ -74,6 +75,8 @@ function SceneCard({
   onDelete,
   onSourceImageUpload,
   projectRefs,
+  previousScene,
+  userAssetsForLock,
 }: {
   scene: VideoScene;
   index: number;
@@ -86,13 +89,17 @@ function SceneCard({
   onDelete: () => void;
   onSourceImageUpload: () => void;
   projectRefs: ReferenceImage[];
+  previousScene?: VideoScene;
+  userAssetsForLock: Array<{ id: string; url: string; name: string; type: string }>;
 }) {
   const [showTrim, setShowTrim] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editPrompt, setEditPrompt] = useState(scene.prompt);
+  const [showLockEndpoints, setShowLockEndpoints] = useState(false);
   const isLoading = scene.status === "generating" || scene.status === "regenerating";
   const isDraft = scene.status === "draft";
+  const hasLockedEndpoints = !!(scene.firstFrameUrl && scene.lastFrameUrl);
 
   // Sync editPrompt when scene.prompt changes externally (e.g. ref tag insertion)
   useEffect(() => {
@@ -367,7 +374,7 @@ function SceneCard({
       )}
 
       {/* Action buttons */}
-      <div className="mt-3 flex items-center gap-1.5">
+      <div className="mt-3 flex items-center gap-1.5 flex-wrap">
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -384,6 +391,26 @@ function SceneCard({
         >
           <RefreshCw size={11} strokeWidth={1.5} />
           <span>Regenerate</span>
+        </button>
+
+        {/* Lock Endpoints — opens the precision interpolation panel */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowLockEndpoints(true);
+          }}
+          className={`
+            flex h-7 items-center gap-1 rounded-lg px-2.5 text-[11px]
+            transition-colors duration-150 cursor-pointer
+            ${hasLockedEndpoints
+              ? "bg-royal/15 text-royal hover:bg-royal/25"
+              : "bg-slate/80 text-ash hover:text-cloud hover:bg-smoke"
+            }
+          `}
+          title={hasLockedEndpoints ? "Endpoints locked — click to edit" : "Lock first/last frame for precision control (+50% cost)"}
+        >
+          <span className="font-mono text-[10px]">[ ]</span>
+          <span>{hasLockedEndpoints ? "Locked" : "Lock Endpoints"}</span>
         </button>
 
         <div className="relative">
@@ -504,6 +531,20 @@ function SceneCard({
             />
           </div>
         </div>
+      )}
+
+      {/* Lock Endpoints panel — opens when user clicks the Lock Endpoints button */}
+      {showLockEndpoints && (
+        <LockEndpointsPanel
+          scene={scene}
+          previousScene={previousScene}
+          userAssets={userAssetsForLock}
+          onUpdateScene={(updates) => {
+            onUpdate(updates);
+            setShowLockEndpoints(false);
+          }}
+          onClose={() => setShowLockEndpoints(false)}
+        />
       )}
     </div>
   );
@@ -799,10 +840,13 @@ export function VideoEditor({
     }
 
     // Auto-detect mode from scene content
+    // WHY: interpolate takes priority — if both first and last frames are
+    // locked, the user explicitly opted in for the precision two-keyframe path.
     let autoMode: VideoSceneMode = "t2v";
     if (scene.sourceImageUrl) autoMode = "i2v";
     if (scene.videoUrl && scene.mode === "extend") autoMode = "extend";
     if (taggedRefs.length > 0) autoMode = "character";
+    if (scene.firstFrameUrl && scene.lastFrameUrl) autoMode = "interpolate";
 
     // WHY: Before sending to Seedance, enrich the prompt through the Gemini Director.
     // Gemini reads our cinematography + music/sound design frameworks and returns a
@@ -867,10 +911,26 @@ export function VideoEditor({
       body.referenceImages = taggedRefs.map((r) => ({ url: r.url, label: r.label }));
     }
 
-    const res = await fetch("/api/generate/video", {
+    // WHY: interpolate mode routes to a different endpoint that calls Seedance 2's
+    // first-last-frame model. Different request shape: only firstFrameUrl + lastFrameUrl
+    // + prompt + duration. No referenceImages, no sourceImage, no extend.
+    const isInterpolate = autoMode === "interpolate" && scene.firstFrameUrl && scene.lastFrameUrl;
+    const endpoint = isInterpolate ? "/api/generate/video/interpolate" : "/api/generate/video";
+    const requestBody = isInterpolate
+      ? {
+          prompt: finalPrompt,
+          firstFrameUrl: scene.firstFrameUrl,
+          lastFrameUrl: scene.lastFrameUrl,
+          duration: scene.duration,
+          aspectRatio: "16:9",
+          fast: true, // Default to fast variant for cost; user can override later
+        }
+      : body;
+
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify(requestBody),
     });
 
     if (!res.ok) throw new Error("Generation failed");
@@ -1494,6 +1554,13 @@ export function VideoEditor({
                     handleSourceImageUpload(scene.id)
                   }
                   projectRefs={refs}
+                  previousScene={i > 0 ? project.scenes[i - 1] : undefined}
+                  userAssetsForLock={refs.map((r) => ({
+                    id: r.id,
+                    url: r.url,
+                    name: r.label || "Reference",
+                    type: r.category ?? "image",
+                  }))}
                 />
 
                 {/* Connector with insert button between scenes */}

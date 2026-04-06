@@ -18,7 +18,7 @@ export interface ContentNode {
 
 export type VideoSceneStatus = "draft" | "generating" | "ready" | "regenerating";
 
-export type VideoSceneMode = "t2v" | "i2v" | "character" | "extend";
+export type VideoSceneMode = "t2v" | "i2v" | "character" | "extend" | "interpolate";
 
 export interface VideoSceneVersion {
   url: string;
@@ -46,6 +46,11 @@ export interface VideoScene {
   videoUrl?: string;
   thumbnailUrl?: string;
   sourceImageUrl?: string; // starting frame for i2v mode
+  // WHY: For "interpolate" mode — first/last keyframes that Seedance 2 fills
+  // motion between. Used for invisible match cuts and brand-controlled hero
+  // shots where the exact final frame composition matters.
+  firstFrameUrl?: string;
+  lastFrameUrl?: string;
   duration: number; // seconds
   trimStart: number; // trim in-point
   trimEnd: number; // trim out-point
