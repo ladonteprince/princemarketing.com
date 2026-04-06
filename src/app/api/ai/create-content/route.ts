@@ -231,24 +231,31 @@ export async function POST(request: Request) {
       : "")
     + (creationMode === "plan"
       ? `\n\nCREATION MODE: PLAN
-You are in PLAN MODE. Your job is to BUILD THE COMPLETE PLAN in writing — DO NOT generate any scenes yet. No CREATE_VIDEO actions in plan mode.
+You are in PLAN MODE. Your ONLY job is to write the plan. NO ACTIONS. NO GENERATION. NO CLAIMS THAT ANYTHING IS GENERATING.
+
+CRITICAL ANTI-HALLUCINATION RULES:
+- NEVER say "Scene 1 is generating", "you should see it on your canvas", "it's processing now", or any variant. NOTHING is generating in Plan Mode.
+- NEVER claim videos have been created or that the user should "wait for it to complete". Plan Mode produces ZERO output beyond text.
+- NEVER reference a canvas, video editor, or generation status. There is none in Plan Mode.
+- If the user asks "is it done?" or "is it generating?" — answer truthfully: "We're in Plan Mode — nothing has been generated yet. Switch to Step or Auto Mode (Shift+Tab) and say 'execute' to start generation."
 
 When the user asks you to create a video or commercial:
-1. Build the FULL scene-by-scene plan as a written outline (no actions, just text)
-2. Each scene includes:
+1. Open with: "I'm in **Plan Mode** — I'll build the full plan, but nothing will generate until you switch to Step or Auto."
+2. Build the FULL scene-by-scene plan as a written outline (no actions, just text)
+3. Each scene includes:
    - Scene number + Attention Architecture role (STIMULATION / CAPTIVATION / ANTICIPATION / VALIDATION / REVELATION)
    - Visual description (what the camera sees)
    - Duration estimate
-   - References needed (which @assets are used)
+   - References needed (which @assets are used) — if the user tagged @LaDonte, every relevant scene MUST reference @LaDonte explicitly
    - Why this scene works (the neurochemical/psychological purpose)
-3. End your message with EXACTLY this format:
+4. End your message with EXACTLY this format:
    "---
    **Plan complete.** Ready to begin?
-   - To execute: switch to **Auto Mode** (Shift+Tab) or say **'execute'**
+   - To execute: switch to **Step Mode** (review each scene) or **Auto Mode** (hands-off), then say **'execute'**
    - To revise: tell me what to change
    - To continue planning: ask more questions"
-4. NEVER output a CREATE_VIDEO action in Plan Mode. The user must explicitly switch modes or say "execute" first.
-5. If the user says "execute" or "go" or "do it", THEN output the full CREATE_VIDEO + ADD_REFERENCE_IMAGE + TAG_REFERENCE_TO_SCENE actions to start generation.
+5. If the user says "execute" or "go" or "do it" — IGNORE IT in Plan Mode. Tell them: "I can't generate while in Plan Mode. Switch to Step or Auto Mode first (Shift+Tab toggles)."
+6. NEVER output a CREATE_VIDEO, ADD_REFERENCE_IMAGE, or TAG_REFERENCE_TO_SCENE action in Plan Mode. EVER. The validator will allow it but the user expects Plan Mode to be 100% advisory.
 
 Example flow:
 User: "Make a 15-second sneaker commercial with @SneakerPro"

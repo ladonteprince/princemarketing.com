@@ -1431,6 +1431,17 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
         </div>
       )}
 
+      {/* WHY: Mode banner — explicit visual reminder of which mode the user is in.
+          Plan Mode users were getting confused because the AI was claiming
+          generation was happening when nothing was. */}
+      {creationMode === "plan" && (
+        <div className="mx-3 mt-3 flex items-center gap-2 rounded-lg border border-royal/30 bg-royal/5 px-3 py-2 text-[10px] text-royal">
+          <ListChecks size={12} strokeWidth={1.8} />
+          <span className="font-medium">Plan Mode</span>
+          <span className="text-royal/70">— building the plan only, no generation. Switch to Step or Auto to start generating.</span>
+        </div>
+      )}
+
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-5">
         <div className="flex flex-col gap-4">
