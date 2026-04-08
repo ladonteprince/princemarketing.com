@@ -762,6 +762,28 @@ export function VideoEditor({
   const [insertIndex, setInsertIndex] = useState<number | null>(null);
   const [stitching, setStitching] = useState(false);
   const [stitchedUrl, setStitchedUrl] = useState<string | null>(null);
+  // WHY: Audio re-mix state. After the initial stitch lands, the user can
+  // iterate on ducking intensity without regenerating any clips. We track
+  // which preset is currently applied so the button group shows an active
+  // state, plus an in-flight indicator during the re-mix ffmpeg run.
+  const [activeDuckingDb, setActiveDuckingDb] = useState<number>(-12);
+  const [remixing, setRemixing] = useState<"subtle" | "standard" | "aggressive" | null>(null);
+  // WHY: Final critic state. Fires Gemini 3.1 Pro against the stitched
+  // MP4 and returns structured per-scene scores + fix suggestions. The
+  // UI shows scores inline and exposes one-click regeneration for each
+  // weak scene. A 6-minute-long run means we show a clear loading state.
+  const [criticLoading, setCriticLoading] = useState(false);
+  const [criticReview, setCriticReview] = useState<{
+    scenes: Array<{
+      sceneIndex: number;
+      score: number;
+      strengths: string;
+      weaknesses: string;
+      fixSuggestion?: string;
+    }>;
+    overallScore: number;
+    overallVerdict: string;
+  } | null>(null);
   const [showKaraoke, setShowKaraoke] = useState(false);
   const [generatingScore, setGeneratingScore] = useState(false);
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
@@ -865,6 +887,16 @@ export function VideoEditor({
             ? "captivation"
             : "anticipation";
 
+      // WHY: Score-first — if the project has a locked track with markers,
+      // pass them to the Director along with this scene's start time so
+      // Gemini can snap camera moves and cut points to real musical beats
+      // instead of guessing with sceneIndex.
+      const sceneStartTime = sceneIdx > 0
+        ? project.scenes
+            .slice(0, sceneIdx)
+            .reduce((sum, s) => sum + s.duration, 0)
+        : 0;
+
       const directRes = await fetch("/api/proxy/direct", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -876,6 +908,9 @@ export function VideoEditor({
           sceneIndex: sceneIdx >= 0 ? sceneIdx : 0,
           totalScenes: sceneCount,
           duration: scene.duration,
+          ...(project.scoreMarkers && project.scoreMarkers.length > 0
+            ? { scoreMarkers: project.scoreMarkers, sceneStartTime }
+            : {}),
         }),
       });
 
@@ -1113,6 +1148,10 @@ export function VideoEditor({
         body: JSON.stringify({
           projectId: project.id,
           audioUrl: project.audioUrl,
+          // WHY: Voiceover fork — whichever branch the user picked
+          // (karaoke or AI voice) lands on project.voiceoverUrl. The
+          // stitch pipeline sidechains music under it automatically.
+          voiceoverUrl: project.voiceoverUrl,
           scenes: project.scenes
             .filter((s) => s.videoUrl && s.status === "ready")
             .map((s) => ({
@@ -2283,6 +2322,42 @@ export function VideoEditor({
                 >
                   <Mic size={12} /> Record Voiceover
                 </button>
+                <button
+                  disabled={criticLoading}
+                  onClick={async () => {
+                    if (!stitchedUrl) return;
+                    setCriticLoading(true);
+                    setCriticReview(null);
+                    try {
+                      const res = await fetch("/api/ai/critic-review", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          videoUrl: stitchedUrl,
+                          brief: project.title ?? "Untitled commercial",
+                          scenes: project.scenes.map((s, i) => ({
+                            index: i,
+                            prompt: s.prompt,
+                            duration: s.trimEnd - s.trimStart,
+                          })),
+                        }),
+                      });
+                      if (res.ok) {
+                        const data = await res.json();
+                        const payload = data?.data ?? data;
+                        if (payload?.scenes) setCriticReview(payload);
+                      }
+                    } catch (err) {
+                      console.warn("[Critic] failed:", err);
+                    } finally {
+                      setCriticLoading(false);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {criticLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                  {criticLoading ? "Critic reviewing..." : "Run Critic"}
+                </button>
                 <button onClick={() => window.open(stitchedUrl, "_blank")} className="flex items-center gap-1.5 rounded-lg bg-slate px-3 py-1.5 text-xs font-medium text-cloud hover:bg-smoke transition-colors cursor-pointer">
                   Open in Tab
                 </button>
@@ -2292,7 +2367,175 @@ export function VideoEditor({
               </div>
             </div>
             <div className="p-4">
+              {/* WHY: Audio re-mix presets. Lets the user iterate on
+                  ducking intensity without a full re-stitch. Hits the
+                  lightweight /api/video/remix-audio endpoint which copies
+                  the video stream and only re-runs the filter graph. */}
+              {(project.audioUrl || project.voiceoverUrl) && (
+                <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-smoke bg-graphite/60 px-3 py-2">
+                  <span className="text-[11px] text-ash">Audio mix:</span>
+                  {([
+                    { key: "subtle" as const, label: "Subtle", db: -6 },
+                    { key: "standard" as const, label: "Standard", db: -12 },
+                    { key: "aggressive" as const, label: "Aggressive", db: -18 },
+                  ]).map((preset) => {
+                    const isActive = activeDuckingDb === preset.db;
+                    const isLoading = remixing === preset.key;
+                    return (
+                      <button
+                        key={preset.key}
+                        type="button"
+                        disabled={!!remixing || isActive}
+                        onClick={async () => {
+                          if (!stitchedUrl) return;
+                          setRemixing(preset.key);
+                          try {
+                            const res = await fetch("/api/video/remix-audio", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                projectId: project.id,
+                                baseVideoUrl: stitchedUrl,
+                                audioUrl: project.audioUrl,
+                                voiceoverUrl: project.voiceoverUrl,
+                                duckingDb: preset.db,
+                              }),
+                            });
+                            if (res.ok) {
+                              const data = await res.json();
+                              const newUrl = data?.videoUrl ?? data?.directUrl;
+                              if (newUrl) {
+                                setStitchedUrl(newUrl);
+                                setActiveDuckingDb(preset.db);
+                              }
+                            }
+                          } catch (err) {
+                            console.warn("[Remix] failed:", err);
+                          } finally {
+                            setRemixing(null);
+                          }
+                        }}
+                        className={[
+                          "flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors",
+                          isActive
+                            ? "bg-royal text-white"
+                            : "bg-graphite text-cloud hover:bg-smoke",
+                          remixing ? "cursor-not-allowed opacity-60" : "",
+                        ].join(" ")}
+                      >
+                        {isLoading && <Loader2 size={10} className="animate-spin" />}
+                        {preset.label}
+                        <span className="text-[9px] opacity-70">{preset.db}dB</span>
+                      </button>
+                    );
+                  })}
+                  {remixing && (
+                    <span className="text-[10px] text-ash/60">
+                      Re-mixing audio...
+                    </span>
+                  )}
+                </div>
+              )}
               <video src={stitchedUrl} controls autoPlay className="w-full rounded-xl" />
+
+              {/* Critic review — per-scene scores + fix suggestions with
+                  one-click regeneration. Only rendered after the user
+                  explicitly runs the critic (it's a paid Gemini call, not
+                  auto-fired). Weak scenes (≤7) get a Regenerate button that
+                  re-fires the existing per-scene generation path with the
+                  critic's fix suggestion appended to the prompt. */}
+              {criticReview && (
+                <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Sparkles size={14} className="text-amber-400" />
+                      <span className="text-xs font-medium text-cloud">
+                        Critic verdict
+                      </span>
+                      <span
+                        className={[
+                          "rounded-full px-2 py-0.5 text-[10px] font-bold",
+                          criticReview.overallScore >= 8
+                            ? "bg-emerald-500/20 text-emerald-300"
+                            : criticReview.overallScore >= 6
+                              ? "bg-amber-500/20 text-amber-300"
+                              : "bg-rose-500/20 text-rose-300",
+                        ].join(" ")}
+                      >
+                        {criticReview.overallScore}/10
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setCriticReview(null)}
+                      className="text-[10px] text-ash hover:text-cloud"
+                    >
+                      dismiss
+                    </button>
+                  </div>
+                  <p className="mb-3 text-[11px] leading-relaxed text-cloud">
+                    {criticReview.overallVerdict}
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {criticReview.scenes.map((s) => {
+                      const scene = project.scenes[s.sceneIndex];
+                      const scoreColor =
+                        s.score >= 8
+                          ? "text-emerald-400"
+                          : s.score >= 6
+                            ? "text-amber-400"
+                            : "text-rose-400";
+                      return (
+                        <div
+                          key={s.sceneIndex}
+                          className="rounded-lg border border-smoke/60 bg-graphite/60 p-2 text-[11px]"
+                        >
+                          <div className="mb-1 flex items-center gap-2">
+                            <span className="font-medium text-cloud">
+                              Scene {s.sceneIndex + 1}
+                            </span>
+                            <span className={`font-bold ${scoreColor}`}>
+                              {s.score}/10
+                            </span>
+                          </div>
+                          {s.strengths && (
+                            <div className="mb-0.5 text-emerald-300/80">
+                              <span className="opacity-60">+</span> {s.strengths}
+                            </div>
+                          )}
+                          {s.weaknesses && s.score <= 7 && (
+                            <div className="mb-1 text-rose-300/80">
+                              <span className="opacity-60">−</span> {s.weaknesses}
+                            </div>
+                          )}
+                          {s.fixSuggestion && scene && (
+                            <div className="mt-1.5 flex flex-col gap-1.5">
+                              <div className="rounded-md bg-graphite/80 px-2 py-1 text-ash/90">
+                                {s.fixSuggestion}
+                              </div>
+                              <button
+                                onClick={async () => {
+                                  // Append the critic's fix suggestion to the
+                                  // scene's existing prompt and re-generate.
+                                  // WHY: Preserve the original intent — we're
+                                  // refining, not replacing. The fix becomes
+                                  // additive guidance the Director enriches.
+                                  const revisedPrompt = `${scene.prompt}\n\nCRITIC NOTE: ${s.fixSuggestion}`;
+                                  const revisedScene = { ...scene, prompt: revisedPrompt };
+                                  updateScene(scene.id, { prompt: revisedPrompt });
+                                  await handleRegenerate(revisedScene);
+                                }}
+                                className="self-start rounded-md bg-royal px-2 py-1 text-[10px] font-medium text-white hover:bg-royal/80 transition-colors"
+                              >
+                                Regenerate scene {s.sceneIndex + 1}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2314,7 +2557,14 @@ export function VideoEditor({
                 ]
               }
               onRecordingComplete={(_blob, audioUrl) => {
-                updateProject({ audioUrl });
+                // WHY: Karaoke recordings now land on voiceoverUrl, not
+                // audioUrl. The music track (audioUrl) stays untouched —
+                // the stitch pipeline sidechains music under voiceover
+                // at render time. Previously this overwrote the music bed.
+                updateProject({
+                  voiceoverUrl: audioUrl,
+                  voiceoverSource: "karaoke",
+                });
                 setShowKaraoke(false);
                 onCloseKaraoke?.();
               }}

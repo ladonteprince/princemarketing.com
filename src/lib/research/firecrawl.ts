@@ -5,6 +5,71 @@
 
 const FIRECRAWL_API_URL = "https://api.firecrawl.dev/v1";
 
+// WHY: Firecrawl intermittently returns 408/429/5xx on premium retailers and
+// video platforms. Without retries a single transient failure cascaded to
+// "Product search failed" — even though the same query succeeds seconds later.
+const TRANSIENT_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+export type FirecrawlErrorCode =
+  | "TIMEOUT"
+  | "RATE_LIMITED"
+  | "NO_IMAGES"
+  | "API_KEY_MISSING"
+  | "UPSTREAM_ERROR"
+  | "OK";
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  opts: { retries?: number; baseMs?: number; label?: string } = {},
+): Promise<T> {
+  const retries = opts.retries ?? 2;
+  const baseMs = opts.baseMs ?? 1000;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const isTransient =
+        err instanceof Error &&
+        (err.name === "AbortError" ||
+          (err as Error & { status?: number }).status === undefined ||
+          TRANSIENT_STATUSES.has((err as Error & { status?: number }).status ?? 0));
+      if (attempt === retries || !isTransient) throw err;
+      const delay = baseMs * Math.pow(2, attempt);
+      console.warn(
+        `[Firecrawl] ${opts.label ?? "request"} failed (attempt ${attempt + 1}/${retries + 1}), retrying in ${delay}ms:`,
+        err instanceof Error ? err.message : err,
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
+}
+
+class HttpError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+    this.name = "HttpError";
+  }
+}
+
 export type CrawlResult = {
   title: string;
   content: string;
@@ -107,25 +172,29 @@ export async function searchFirecrawl(
   }
 
   try {
-    const response = await fetch(`${FIRECRAWL_API_URL}/search`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    const response = await retryWithBackoff(
+      async () => {
+        const r = await fetchWithTimeout(
+          `${FIRECRAWL_API_URL}/search`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              query,
+              limit,
+              scrapeOptions: { formats: ["markdown"] },
+            }),
+          },
+          15_000,
+        );
+        if (!r.ok) throw new HttpError(r.status, `search ${r.status}`);
+        return r;
       },
-      body: JSON.stringify({
-        query,
-        limit,
-        scrapeOptions: { formats: ["markdown"] },
-      }),
-    });
-
-    if (!response.ok) {
-      console.error(
-        `[Firecrawl] Search error: ${response.status} ${response.statusText}`,
-      );
-      return [];
-    }
+      { label: `search "${query}"` },
+    );
 
     const data = await response.json();
     const results: unknown[] = data.data ?? [];
@@ -222,25 +291,25 @@ export async function extractImagesFromUrl(url: string): Promise<string[]> {
 
   let html = "";
   try {
-    const response = await fetch(`${FIRECRAWL_API_URL}/scrape`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    const response = await retryWithBackoff(
+      async () => {
+        const r = await fetchWithTimeout(
+          `${FIRECRAWL_API_URL}/scrape`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ url, formats: ["html", "markdown"] }),
+          },
+          15_000,
+        );
+        if (!r.ok) throw new HttpError(r.status, `scrape ${r.status}`);
+        return r;
       },
-      body: JSON.stringify({
-        url,
-        formats: ["html", "markdown"],
-      }),
-    });
-
-    if (!response.ok) {
-      console.error(
-        `[Firecrawl] Scrape error (${url}): ${response.status} ${response.statusText}`,
-      );
-      return [];
-    }
-
+      { label: `scrape ${url}` },
+    );
     const data = await response.json();
     html = (data.data?.html as string) ?? (data.data?.rawHtml as string) ?? "";
   } catch (err) {

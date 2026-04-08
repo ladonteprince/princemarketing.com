@@ -9,6 +9,8 @@ const API_KEY = process.env.PRINCE_API_KEY || "";
 const requestSchema = z.object({
   projectId: z.string(),
   audioUrl: z.string().optional(),
+  voiceoverUrl: z.string().optional(),
+  duckingDb: z.number().min(-24).max(0).optional(),
   scenes: z.array(
     z.object({
       videoUrl: z.string(),
@@ -41,7 +43,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
-    const { projectId, scenes, audioUrl } = parsed.data;
+    const { projectId, scenes, audioUrl, voiceoverUrl, duckingDb } = parsed.data;
 
     if (scenes.length === 0) {
       return NextResponse.json(
@@ -70,6 +72,8 @@ export async function POST(request: Request) {
         projectId,
         scenes: resolvedScenes,
         audioUrl,
+        voiceoverUrl,
+        duckingDb,
       }),
     });
 

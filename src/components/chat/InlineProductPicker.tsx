@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Check, ExternalLink, ShoppingBag, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, ExternalLink, ShoppingBag, Loader2, Maximize2, X } from "lucide-react";
 
 // WHY: Inline product picker that renders inside the chat message stream.
 // When the AI runs a product search ("find me a Rolex Submariner"), the
@@ -21,6 +21,9 @@ type InlineProductPickerProps = {
   label: string;
   products: Product[];
   onSelect: (product: Product, label: string) => Promise<void> | void;
+  // WHY: Lets the user undo a picked reference. Parent dispatches a
+  // remove-reference-image canvas action and the card re-enables.
+  onDeselect?: (product: Product, label: string) => Promise<void> | void;
 };
 
 export default function InlineProductPicker({
@@ -28,11 +31,25 @@ export default function InlineProductPicker({
   label,
   products,
   onSelect,
+  onDeselect,
 }: InlineProductPickerProps) {
   // WHY: imageUrl doubles as the unique key — product search APIs rarely
   // return stable IDs, but image URLs are unique per result.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  // WHY: Lightbox preview so the user can see a larger version before
+  // committing. Click outside or Escape closes.
+  const [expandPreview, setExpandPreview] = useState<Product | null>(null);
+
+  useEffect(() => {
+    if (!expandPreview) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExpandPreview(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expandPreview]);
 
   // WHY: Empty state. Search may return zero results (rare brand, blocked
   // sources, etc.) — we still need to acknowledge the search ran.
@@ -53,13 +70,24 @@ export default function InlineProductPicker({
   const handleSelect = async (product: Product) => {
     // WHY: Guard against double-clicks and clicks while another card is
     // being added — prevents duplicate reference image uploads.
-    if (adding || selectedId) return;
+    if (adding || removing || selectedId) return;
     setSelectedId(product.imageUrl);
     setAdding(true);
     try {
       await onSelect(product, label);
     } finally {
       setAdding(false);
+    }
+  };
+
+  const handleDeselect = async (product: Product) => {
+    if (removing || !onDeselect) return;
+    setRemoving(true);
+    try {
+      await onDeselect(product, label);
+      setSelectedId(null);
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -110,6 +138,29 @@ export default function InlineProductPicker({
                   className="h-full w-full object-cover transition-transform group-hover:scale-105"
                 />
 
+                {/* Expand preview button — opens lightbox. Always visible
+                    at low opacity on touch devices; hover-to-show on desktop. */}
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setExpandPreview(product);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setExpandPreview(product);
+                    }
+                  }}
+                  aria-label={`Preview ${product.title}`}
+                  className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-cloud opacity-60 backdrop-blur-sm transition-opacity hover:bg-black/80 hover:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                >
+                  <Maximize2 className="h-3 w-3" />
+                </span>
+
                 {/* Loading overlay while awaiting onSelect */}
                 {isAddingThis && (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -145,6 +196,32 @@ export default function InlineProductPicker({
                 {product.title}
               </div>
 
+              {/* Remove button — shown after successful add so the user can
+                  undo the selection and pick another product. */}
+              {isAddedThis && onDeselect && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeselect(product);
+                  }}
+                  disabled={removing}
+                  className="flex items-center justify-center gap-1 rounded-md border border-smoke bg-graphite/60 px-2 py-1 text-[10px] text-ash transition-colors hover:border-rose-500/50 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {removing ? (
+                    <>
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Removing...
+                    </>
+                  ) : (
+                    <>
+                      <X className="h-3 w-3" />
+                      Remove
+                    </>
+                  )}
+                </button>
+              )}
+
               {/* Price (optional) */}
               {product.price && (
                 <div className="text-[10px] font-medium text-emerald-400">
@@ -167,6 +244,45 @@ export default function InlineProductPicker({
           );
         })}
       </div>
+
+      {/* Lightbox — larger preview. Click backdrop or X to close. */}
+      {expandPreview && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setExpandPreview(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm"
+        >
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpandPreview(null);
+            }}
+            className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-graphite text-cloud transition-colors hover:bg-smoke"
+            aria-label="Close preview"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <div
+            className="relative flex max-h-full max-w-4xl flex-col items-center gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={expandPreview.imageUrl}
+              alt={expandPreview.title}
+              className="max-h-[80vh] w-auto rounded-xl object-contain"
+            />
+            <div className="max-w-2xl text-center text-sm text-cloud">
+              {expandPreview.title}
+              <div className="mt-1 text-[11px] text-ash/60">
+                {expandPreview.sourceDomain}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

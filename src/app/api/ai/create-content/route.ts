@@ -48,6 +48,22 @@ const requestSchema = z.object({
   creationMode: z.enum(["plan", "step", "auto"]).optional(),
   memories: z.string().optional(),
   projectName: z.string().max(200).optional(),
+  // WHY: The active video project's reference images — the AI needs to know
+  // what's already been attached (especially products/envs the user picked via
+  // the inline picker) so it can tag them in CREATE_VIDEO. Without this, the
+  // AI hallucinates that only references it added in its own response exist.
+  currentProjectReferences: z
+    .array(
+      z.object({
+        id: z.string(),
+        url: z.string().url(),
+        label: z.string(),
+        category: z.enum(["character", "prop", "scene"]).optional(),
+      }),
+    )
+    .max(20)
+    .optional(),
+  activeVideoProjectId: z.string().optional(),
 });
 
 // WHY: Agentic system prompt — tells Claude to return structured action blocks
@@ -99,6 +115,66 @@ IMPORTANT REMINDERS:
 \`\`\`
 - When the user asks for multiple things (images + video, copy + images, etc.), output ALL action blocks in a single response. Do not stop after the first action.
 
+SCORE-FIRST PRODUCTION ORDER (MANDATORY for Step Mode and Plan Mode videos):
+Pro commercial/music-video shops never "cut to picture" anymore. Rhythm is
+the skeleton, not the afterthought. Every scene's duration, cut point, and
+camera move must be timed to the music BEFORE a single frame is generated.
+So for any video >8 seconds (anything beyond a single clip), the order is:
+
+1. PLAN — write the scene outline (Attention Architecture beats)
+2. CREATE_SCORE — output 3 track options for the user to pick from.
+   Different genres/tempos matching the Attention Architecture read.
+   Use CREATE_SCORE action with a trackOptions array. Example:
+   \`\`\`action
+   {"action": "CREATE_SCORE", "videoProjectId": "auto", "trackOptions": [
+     {"prompt": "Dark trap beat, sub-bass, slow rolling hi-hats, luxury menace", "genre": "trap", "bpm": 70, "duration": 30},
+     {"prompt": "Orchestral cinematic, strings swelling, tension-to-release", "genre": "cinematic", "bpm": 90, "duration": 30},
+     {"prompt": "Minimalist house, deep bassline, hypnotic synth", "genre": "deep house", "bpm": 120, "duration": 30}
+   ]}
+   \`\`\`
+3. (user picks a track inline → timeline is now locked)
+4. OFFER_VOICEOVER — draft the timestamped VO script aligned to the locked
+   timeline, then emit OFFER_VOICEOVER so the user picks between two paths:
+   (a) record it themselves via karaoke, or (b) pick an AI voice (ElevenLabs).
+   The inline picker handles both branches — you don't decide for them. You
+   MAY recommend one of the three preset voice IDs if the brand tone suggests
+   it (21m00Tcm4TlvDq8ikWAM = Rachel/warm-female, pNInz6obpgDQGcFmaJgB =
+   Adam/deep-male, AZnzlk1XvdvUeBnXmlld = Domi/intimate-sultry).
+   Example:
+   \`\`\`action
+   {"action": "OFFER_VOICEOVER", "videoProjectId": "auto", "script": [
+     {"startTime": 0, "endTime": 3, "text": "Some men chase attention."},
+     {"startTime": 3, "endTime": 7, "text": "Others make attention chase them."},
+     {"startTime": 7, "endTime": 12, "text": "Tom Ford. Unmistakable."}
+   ], "recommendedVoiceId": "pNInz6obpgDQGcFmaJgB"}
+   \`\`\`
+   SKIP this step entirely if the user explicitly said they don't want a
+   voiceover ("no VO", "music only", "no narration"). In that case go
+   straight from CREATE_SCORE to CREATE_VIDEO.
+5. (user picks a VO path inline → voiceoverUrl lands on the project)
+6. CREATE_VIDEO — NOW generate scenes. Every scene duration derived from a
+   musical section of the chosen track. Every relevant reference (characters,
+   products, environments) tagged to every scene it belongs in. The final
+   stitch will layer: video → music bed (ducked) → voiceover on top.
+
+Auto Mode is the exception — in Auto Mode, skip score-first and let Seedance
+generate first, then Sound Director scores post. Only Step/Plan use score-first.
+
+PRODUCTION BRAIN RESEARCH TOOL:
+You have access to a 125-vector research corpus covering Attention Architecture,
+Storylocks, neurochemical mapping (dopamine ladder), cinematography theory,
+music/sound design research, and copywriting frameworks. When a creative or
+strategic decision needs grounding in research — "why does this hook work?",
+"what's the optimal shot for anticipation?", "which neurochemical does this
+trigger?" — call QUERY_PRODUCTION_BRAIN with a focused query. Example:
+\`\`\`action
+{"action": "QUERY_PRODUCTION_BRAIN", "query": "optimal shot length for dopamine anticipation in luxury commercials"}
+\`\`\`
+The user will see the citations inline below your message. Use this tool
+PROACTIVELY when making non-obvious creative calls — citing research is
+trust-building, not showing off. Never fabricate citations; if the brain
+returns nothing, say so and make the call from first principles.
+
 If the user is just chatting or asking questions, respond normally WITHOUT any action or JSON blocks.`;
 
 export async function POST(request: Request) {
@@ -124,7 +200,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
-    const { message, history, existingNodes, creationMode, memories, projectName } = parsed.data;
+    const { message, history, existingNodes, creationMode, memories, projectName, currentProjectReferences, activeVideoProjectId } = parsed.data;
 
     // WHY: Inject the user's social media context so the AI can give personalized advice.
     // e.g. "Based on your recent Instagram posts about sneakers..." instead of generic tips.
@@ -210,6 +286,17 @@ export async function POST(request: Request) {
     if (safeSocialContext) contextSources.push("social_context");
     if (analyticsContext) contextSources.push("analytics_context");
     if (memories) contextSources.push("user_memories");
+    if (currentProjectReferences?.length) contextSources.push("project_references");
+
+    // WHY: Tell the AI exactly which references are already attached to the active
+    // video project so it can tag them in EVERY CREATE_VIDEO scene. Without this,
+    // products picked via the inline picker were being silently dropped because
+    // the AI only knew about refs it added itself via ADD_REFERENCE_IMAGE.
+    const projectRefsContext = currentProjectReferences?.length
+      ? `\n\nCURRENT VIDEO PROJECT REFERENCES (already attached to project${activeVideoProjectId ? ` ${activeVideoProjectId}` : ""} — you MUST tag these in every relevant CREATE_VIDEO scene):\n${currentProjectReferences
+          .map((r) => `- @${r.label}${r.category ? ` (${r.category})` : ""}: ${r.url}`)
+          .join("\n")}\n\nCRITICAL: When outputting CREATE_VIDEO, output a TAG_REFERENCE_TO_SCENE action for EVERY relevant reference across ALL scenes. Characters should be tagged to every scene they appear in. Props (watches, suits, cars) should be tagged to scenes where they're visible. Environments should be tagged to scenes set there. Never forget a reference that's already in the project — the user added it for a reason.`
+      : "";
 
     const systemPrompt = WORKSPACE_SYSTEM_PROMPT.replace(
       "{existingNodes}",
@@ -223,6 +310,7 @@ export async function POST(request: Request) {
       ? `\n\nUser's recent analytics (reference this proactively when relevant):\n${analyticsContext}\nWhen the user asks to create content, suggest using GENERATE_VARIANTS to get A/B options. When they ask about performance, use GET_ANALYTICS for deep insights.`
       : "")
     + assetsContext
+    + projectRefsContext
     + (memories
       ? `\n\nUSER MEMORIES (remembered from past conversations — use these to personalize your responses. Reference them naturally, e.g. "Based on what I remember about your brand..."):\n${memories}`
       : "")

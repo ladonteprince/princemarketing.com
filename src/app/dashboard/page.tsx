@@ -265,6 +265,103 @@ export default function DashboardPage() {
           });
           break;
         }
+        case "remove-reference-image": {
+          // WHY: Deselecting a product from the inline picker. Remove the ref
+          // AND scrub it from every scene's referenceImageIds so dangling IDs
+          // don't break the tag lookup on the next generation.
+          setVideoProjects((prev) => {
+            const next = new Map(prev);
+            const project = next.get(action.videoProjectId);
+            if (!project) return prev;
+            const updatedRefs = project.referenceImages.filter(
+              (r) => r.id !== action.referenceId,
+            );
+            const updatedScenes = project.scenes.map((s) => ({
+              ...s,
+              referenceImageIds: s.referenceImageIds.filter(
+                (id) => id !== action.referenceId,
+              ),
+            }));
+            next.set(action.videoProjectId, {
+              ...project,
+              referenceImages: updatedRefs,
+              scenes: updatedScenes,
+            });
+            return next;
+          });
+          break;
+        }
+        case "add-score-options": {
+          // WHY: Score-first. Stash the generated track options on the
+          // project so the InlineTrackPicker can render them. The user picks
+          // one, which fires select-score-track to lock the timeline.
+          setVideoProjects((prev) => {
+            const next = new Map(prev);
+            const project = next.get(action.videoProjectId);
+            if (!project) return prev;
+            next.set(action.videoProjectId, {
+              ...project,
+              scoreTrackOptions: action.options,
+            });
+            return next;
+          });
+          break;
+        }
+        case "select-score-track": {
+          // WHY: User picked a track. Lock the project's audioUrl to it and
+          // store the beat markers so Gemini Director can snap scene
+          // durations to musical sections on the next CREATE_VIDEO.
+          setVideoProjects((prev) => {
+            const next = new Map(prev);
+            const project = next.get(action.videoProjectId);
+            if (!project) return prev;
+            const track = project.scoreTrackOptions?.find(
+              (t) => t.id === action.trackId,
+            );
+            next.set(action.videoProjectId, {
+              ...project,
+              selectedScoreTrackId: action.trackId,
+              audioUrl: track?.audioUrl ?? project.audioUrl,
+              scoreMarkers: action.markers,
+            });
+            return next;
+          });
+          break;
+        }
+        case "set-voiceover-script": {
+          // WHY: Stash the timestamped VO draft on the project so the
+          // karaoke recorder and the AI voice branch both read from the
+          // same source of truth. The chat's inline picker renders from it.
+          setVideoProjects((prev) => {
+            const next = new Map(prev);
+            const project = next.get(action.videoProjectId);
+            if (!project) return prev;
+            next.set(action.videoProjectId, {
+              ...project,
+              voiceoverScript: action.script,
+            });
+            return next;
+          });
+          break;
+        }
+        case "set-voiceover": {
+          // WHY: Both the karaoke branch and the ElevenLabs branch end up
+          // here — the final stitch reads voiceoverUrl and layers it over
+          // the music bed regardless of which path produced it.
+          setVideoProjects((prev) => {
+            const next = new Map(prev);
+            const project = next.get(action.videoProjectId);
+            if (!project) return prev;
+            next.set(action.videoProjectId, {
+              ...project,
+              voiceoverUrl: action.url,
+              voiceoverSource: action.source,
+              voiceoverVoiceId: action.voiceId,
+            });
+            return next;
+          });
+          break;
+        }
         case "tag-reference-to-scene": {
           setVideoProjects((prev) => {
             const next = new Map(prev);

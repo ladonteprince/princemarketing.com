@@ -234,6 +234,84 @@ const SaveMemoryAction = z.object({
   content: z.string().max(2000),
 });
 
+// --- Score-First Action: CREATE_SCORE ---
+// WHY: Score-first production order. BEFORE any Seedance calls, the AI emits
+// CREATE_SCORE with 3 track options (different genres/tempos matching the
+// Attention Architecture read). Lyria generates them in parallel, the user
+// picks one in an InlineTrackPicker, and the chosen track becomes the
+// timeline skeleton for all downstream scenes. Every scene's duration gets
+// locked to a musical section boundary (intro/verse/drop/outro) so cuts
+// land on the beat instead of drifting.
+const CreateScoreAction = z.object({
+  action: z.literal("CREATE_SCORE"),
+  videoProjectId: VideoProjectIdSchema,
+  trackOptions: z
+    .array(
+      z.object({
+        prompt: z.string().min(5).max(2000),
+        genre: z.string().max(100).optional(),
+        bpm: z.number().min(40).max(220).optional(),
+        duration: z.number().min(5).max(180),
+      }),
+    )
+    .min(1)
+    .max(3),
+});
+
+// --- Voiceover Fork: OFFER_VOICEOVER ---
+// WHY: After the track is locked, the AI drafts a timestamped script and
+// offers the user two paths: record it themselves (karaoke) OR pick an AI
+// voice (ElevenLabs). The inline picker renders both options. Either path
+// produces a voiceoverUrl the final mix layers over the music bed.
+const OfferVoiceoverAction = z.object({
+  action: z.literal("OFFER_VOICEOVER"),
+  videoProjectId: VideoProjectIdSchema,
+  script: z
+    .array(
+      z.object({
+        startTime: z.number().min(0),
+        endTime: z.number().min(0),
+        text: z.string().min(1).max(500),
+      }),
+    )
+    .min(1)
+    .max(50),
+  // AI recommends a voice based on brand tone but the user can override
+  // in the picker. Omitted = no recommendation, user picks freely.
+  recommendedVoiceId: z.string().max(100).optional(),
+});
+
+// --- Direct AI Voiceover Generation ---
+// WHY: Lets the AI fire ElevenLabs directly when the user has already
+// chosen the AI branch (e.g., "use that same voice again for scene 5").
+// Normal flow goes through OFFER_VOICEOVER → inline picker → this action.
+const GenerateVoiceoverAction = z.object({
+  action: z.literal("GENERATE_VOICEOVER"),
+  videoProjectId: VideoProjectIdSchema,
+  voiceId: z.string().min(10).max(100),
+  script: z
+    .array(
+      z.object({
+        startTime: z.number().min(0),
+        endTime: z.number().min(0),
+        text: z.string().min(1).max(500),
+      }),
+    )
+    .min(1)
+    .max(50),
+});
+
+// --- Production Brain Query ---
+// WHY: Lets Claude consciously reach into the 125-vector research corpus
+// (Attention Architecture, Storylocks, neurochemical mapping, cinematography)
+// when a creative decision needs grounding. Returns citations inline so the
+// user sees WHICH research informed the advice — trust-building by design.
+const QueryProductionBrainAction = z.object({
+  action: z.literal("QUERY_PRODUCTION_BRAIN"),
+  query: z.string().min(5).max(500),
+  topK: z.number().int().min(1).max(10).optional(),
+});
+
 // WHY: The AI can delete memories when the user asks to "forget" something.
 // Matches by title (case-insensitive) and removes from localStorage.
 const DeleteMemoryAction = z.object({
@@ -270,6 +348,10 @@ export const ActionBlockSchema = z.discriminatedUnion("action", [
   TagReferenceToSceneAction,
   SaveMemoryAction,
   DeleteMemoryAction,
+  CreateScoreAction,
+  QueryProductionBrainAction,
+  OfferVoiceoverAction,
+  GenerateVoiceoverAction,
 ]);
 
 export type ValidAction = z.infer<typeof ActionBlockSchema>;

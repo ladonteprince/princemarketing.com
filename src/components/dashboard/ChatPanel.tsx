@@ -6,6 +6,8 @@ import { ChatMessage } from "@/components/chat/ChatMessage";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { InlineVideoSet } from "@/components/chat/InlineVideoCard";
 import InlineProductPicker from "@/components/chat/InlineProductPicker";
+import InlineTrackPicker from "@/components/chat/InlineTrackPicker";
+import InlineVoiceoverPicker from "@/components/chat/InlineVoiceoverPicker";
 import { ThinkingDots } from "@/components/ui/ThinkingDots";
 import { Badge } from "@/components/ui/Badge";
 import {
@@ -53,6 +55,40 @@ type Message = {
       sourceDomain: string;
       price?: string;
     }>;
+  };
+  // WHY: Score-first. Generated Lyria track options attached to this message
+  // for inline picker rendering. User picks one → select-score-track action.
+  scorePicker?: {
+    videoProjectId: string;
+    tracks: Array<{
+      id: string;
+      prompt: string;
+      genre?: string;
+      bpm?: number;
+      duration: number;
+      audioUrl?: string;
+      status: "generating" | "ready" | "failed";
+    }>;
+  };
+  // WHY: Production Brain citations returned from QUERY_PRODUCTION_BRAIN.
+  // Rendered as expandable citation cards below the assistant message.
+  brainCitations?: {
+    query: string;
+    matches: Array<{
+      id: string;
+      score: number;
+      content: string;
+      source: string;
+      section: string;
+    }>;
+  };
+  // WHY: Voiceover fork payload. When the AI offers a VO, this carries
+  // the draft script + recommended voice so InlineVoiceoverPicker can
+  // render the two-path chooser and the voice grid.
+  voiceoverOffer?: {
+    videoProjectId: string;
+    script: Array<{ startTime: number; endTime: number; text: string }>;
+    recommendedVoiceId?: string;
   };
 };
 
@@ -103,6 +139,18 @@ type AgentAction = {
   script?: Array<{ startTime: number; endTime: number; text: string }>;
   // Product search (Firecrawl + browser fallback)
   query?: string;
+  // Brain query
+  topK?: number;
+  // Score-first: track options for CREATE_SCORE
+  trackOptions?: Array<{
+    prompt: string;
+    genre?: string;
+    bpm?: number;
+    duration: number;
+  }>;
+  // Voiceover fork
+  recommendedVoiceId?: string;
+  voiceId?: string;
 };
 
 type ChatPanelProps = {
@@ -155,6 +203,33 @@ async function executeAction(
     category?: "character" | "prop" | "environment";
     videoProjectId?: string;
     products: Array<{ imageUrl: string; title: string; sourceUrl: string; sourceDomain: string; price?: string }>;
+  };
+  scorePicker?: {
+    videoProjectId: string;
+    tracks: Array<{
+      id: string;
+      prompt: string;
+      genre?: string;
+      bpm?: number;
+      duration: number;
+      audioUrl?: string;
+      status: "generating" | "ready" | "failed";
+    }>;
+  };
+  brainCitations?: {
+    query: string;
+    matches: Array<{
+      id: string;
+      score: number;
+      content: string;
+      source: string;
+      section: string;
+    }>;
+  };
+  voiceoverOffer?: {
+    videoProjectId: string;
+    script: Array<{ startTime: number; endTime: number; text: string }>;
+    recommendedVoiceId?: string;
   };
 }> {
   switch (action.action) {
@@ -705,13 +780,23 @@ async function executeAction(
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: action.query, limit: 5 }),
         });
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          return { success: false, detail: "Product search failed" };
+          const code: string | undefined = data?.code;
+          if (code === "TIMEOUT" || res.status === 504) {
+            return { success: false, detail: `Search timed out for "${action.query}" — try again in a moment.` };
+          }
+          if (res.status === 429) {
+            return { success: false, detail: "Rate limited — wait a minute and try again." };
+          }
+          if (code === "API_KEY_MISSING") {
+            return { success: false, detail: "Product search backend isn't configured yet." };
+          }
+          return { success: false, detail: data?.error ?? "Product search failed" };
         }
-        const data = await res.json();
         const products = data.products ?? [];
         if (products.length === 0) {
-          return { success: false, detail: `No products found for "${action.query}"` };
+          return { success: false, detail: data?.message ?? `No products found for "${action.query}" — try a more specific search.` };
         }
         return {
           success: true,
@@ -728,6 +813,155 @@ async function executeAction(
         };
       } catch (err) {
         return { success: false, detail: err instanceof Error ? err.message : "Product search failed" };
+      }
+    }
+
+    case "OFFER_VOICEOVER": {
+      // WHY: The voiceover fork. Stashes the draft script on the project
+      // AND returns a voiceoverOffer payload that renders the inline
+      // two-path picker (karaoke vs AI voice). No audio is generated yet;
+      // that happens when the user clicks one of the two options.
+      if (!action.videoProjectId || !action.script?.length) {
+        return { success: false, detail: "Missing videoProjectId or script" };
+      }
+      onCanvasAction({
+        type: "set-voiceover-script",
+        videoProjectId: String(action.videoProjectId),
+        script: action.script,
+      });
+      return {
+        success: true,
+        detail: `Voiceover script ready — ${action.script.length} line${action.script.length === 1 ? "" : "s"}. Pick how to record it.`,
+        voiceoverOffer: {
+          videoProjectId: String(action.videoProjectId),
+          script: action.script,
+          recommendedVoiceId: action.recommendedVoiceId,
+        },
+      };
+    }
+
+    case "GENERATE_VOICEOVER": {
+      // WHY: Direct AI voice generation path. Normal flow goes through
+      // OFFER_VOICEOVER → inline picker → this action, but the AI can
+      // also call it directly when the user says "use the same voice".
+      if (!action.videoProjectId || !action.voiceId || !action.script?.length) {
+        return { success: false, detail: "Missing videoProjectId, voiceId, or script" };
+      }
+      try {
+        const res = await fetch("/api/generate/voiceover", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            videoProjectId: action.videoProjectId,
+            voiceId: action.voiceId,
+            script: action.script,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          return { success: false, detail: data?.error ?? "Voiceover generation failed" };
+        }
+        const data = await res.json();
+        const audioUrl =
+          data?.data?.audioUrl ?? data?.audioUrl ?? data?.url;
+        if (!audioUrl) {
+          return { success: false, detail: "Voiceover returned no URL" };
+        }
+        onCanvasAction({
+          type: "set-voiceover",
+          videoProjectId: String(action.videoProjectId),
+          url: audioUrl,
+          source: "ai",
+          voiceId: action.voiceId,
+        });
+        return {
+          success: true,
+          detail: `Voiceover generated (${data?.data?.voiceName ?? data?.voiceName ?? "AI voice"})`,
+        };
+      } catch (err) {
+        return { success: false, detail: err instanceof Error ? err.message : "Voiceover generation failed" };
+      }
+    }
+
+    case "CREATE_SCORE": {
+      // WHY: Score-first production. Fire Lyria 3x in parallel for the
+      // candidate track options. Returns a scorePicker payload that the
+      // chat renders as an inline track selector. The chosen track locks
+      // the project's timeline before any Seedance calls happen.
+      if (!action.videoProjectId || !action.trackOptions?.length) {
+        return { success: false, detail: "Missing videoProjectId or trackOptions" };
+      }
+      try {
+        const res = await fetch("/api/generate/score", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            videoProjectId: action.videoProjectId,
+            trackOptions: action.trackOptions,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          return { success: false, detail: data?.error ?? "Score generation failed" };
+        }
+        const data = await res.json();
+        const tracks = data.tracks ?? [];
+        const readyCount = tracks.filter((t: { status: string }) => t.status === "ready").length;
+        if (readyCount === 0) {
+          return { success: false, detail: "No tracks generated successfully" };
+        }
+        // Also push into the project state so the canvas knows
+        onCanvasAction({
+          type: "add-score-options",
+          videoProjectId: String(action.videoProjectId),
+          options: tracks,
+        });
+        return {
+          success: true,
+          detail: `Generated ${readyCount} track option${readyCount === 1 ? "" : "s"} — pick one to lock the timeline`,
+          scorePicker: {
+            videoProjectId: String(action.videoProjectId),
+            tracks,
+          },
+        };
+      } catch (err) {
+        return { success: false, detail: err instanceof Error ? err.message : "Score generation failed" };
+      }
+    }
+
+    case "QUERY_PRODUCTION_BRAIN": {
+      // WHY: Agentic research tool. Claude calls this when a creative or
+      // strategic decision needs grounding in the 125-vector research
+      // corpus. Returns citations that render inline below the message
+      // so the user sees which research informed the advice.
+      if (!action.query) {
+        return { success: false, detail: "Missing query" };
+      }
+      try {
+        const res = await fetch("/api/ai/query-brain", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: action.query, topK: action.topK ?? 5 }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          return { success: false, detail: data?.error ?? "Brain query failed" };
+        }
+        const data = await res.json();
+        const matches = data?.data?.matches ?? data?.matches ?? [];
+        if (matches.length === 0) {
+          return { success: false, detail: `No research found for "${action.query}"` };
+        }
+        return {
+          success: true,
+          detail: `Found ${matches.length} research citation${matches.length === 1 ? "" : "s"}`,
+          brainCitations: {
+            query: action.query,
+            matches,
+          },
+        };
+      } catch (err) {
+        return { success: false, detail: err instanceof Error ? err.message : "Brain query failed" };
       }
     }
 
@@ -842,6 +1076,10 @@ const ACTION_LABELS: Record<string, { label: string; icon: typeof ImageIcon }> =
   ADD_REFERENCE_IMAGE: { label: "Adding reference image", icon: ImageIcon },
   TAG_REFERENCE_TO_SCENE: { label: "Tagging reference to scene", icon: ImageIcon },
   FIND_PRODUCT: { label: "Searching the web for products", icon: ShoppingBag },
+  CREATE_SCORE: { label: "Generating score options", icon: FileText },
+  QUERY_PRODUCTION_BRAIN: { label: "Consulting production brain", icon: FileText },
+  OFFER_VOICEOVER: { label: "Drafting voiceover script", icon: Mic },
+  GENERATE_VOICEOVER: { label: "Generating AI voiceover", icon: Mic },
   CREATE_REFERENCE_FROM_PHOTOS: { label: "Building reference sheet from photos", icon: ImageIcon },
   OPEN_KARAOKE: { label: "Opening karaoke recorder", icon: Mic },
   GENERATE_SCORE: { label: "Composing score", icon: Music },
@@ -1107,6 +1345,37 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
         .filter((a) => a.action === "ADD_REFERENCE_IMAGE" && a.url && a.label)
         .map((a) => ({ url: String(a.url), label: String(a.label) }));
 
+      // WHY: Belt-and-suspenders — also merge references already attached to
+      // the most recent video project (products/envs picked via the inline
+      // picker). Even if the AI forgets to re-emit TAG_REFERENCE_TO_SCENE for
+      // them, Seedance still gets the refs on its first call. Dedupe by URL.
+      try {
+        const saved = typeof window !== "undefined" ? localStorage.getItem("pm-video-projects") : null;
+        if (saved) {
+          const all = JSON.parse(saved) as Array<{
+            createdAt?: string;
+            updatedAt?: string;
+            referenceImages?: Array<{ url: string; label: string }>;
+          }>;
+          if (Array.isArray(all) && all.length > 0) {
+            const latest = [...all].sort((a, b) => {
+              const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
+              const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
+              return tb - ta;
+            })[0];
+            const seen = new Set(pendingReferences.map((r) => r.url));
+            for (const ref of latest?.referenceImages ?? []) {
+              if (ref?.url && ref?.label && !seen.has(ref.url)) {
+                pendingReferences.push({ url: ref.url, label: ref.label });
+                seen.add(ref.url);
+              }
+            }
+          }
+        }
+      } catch {
+        /* ignore corrupt state */
+      }
+
       // WHY: When the AI outputs CREATE_VIDEO + ADD_REFERENCE_IMAGE + TAG_REFERENCE_TO_SCENE
       // in the same response, it uses placeholders ("auto"/"current"/"latest") for the
       // videoProjectId because it doesn't know the UUID yet. Pre-process the actions
@@ -1168,6 +1437,33 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
             category?: "character" | "prop" | "environment";
             videoProjectId?: string;
             products: Array<{ imageUrl: string; title: string; sourceUrl: string; sourceDomain: string; price?: string }>;
+          };
+          scorePicker?: {
+            videoProjectId: string;
+            tracks: Array<{
+              id: string;
+              prompt: string;
+              genre?: string;
+              bpm?: number;
+              duration: number;
+              audioUrl?: string;
+              status: "generating" | "ready" | "failed";
+            }>;
+          };
+          brainCitations?: {
+            query: string;
+            matches: Array<{
+              id: string;
+              score: number;
+              content: string;
+              source: string;
+              section: string;
+            }>;
+          };
+          voiceoverOffer?: {
+            videoProjectId: string;
+            script: Array<{ startTime: number; endTime: number; text: string }>;
+            recommendedVoiceId?: string;
           };
         };
 
@@ -1234,6 +1530,9 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
                   ...(result.videoProjectId ? { videoProjectId: result.videoProjectId } : {}),
                   // WHY: Attach productSearch results so InlineProductPicker can render
                   ...(result.productSearch ? { productSearch: result.productSearch } : {}),
+                  ...(result.scorePicker ? { scorePicker: result.scorePicker } : {}),
+                  ...(result.brainCitations ? { brainCitations: result.brainCitations } : {}),
+                  ...(result.voiceoverOffer ? { voiceoverOffer: result.voiceoverOffer } : {}),
                 }
               : m,
           ),
@@ -1259,12 +1558,37 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
       loadMentionAssets();
     }
 
+    // WHY: Plan Mode → Step Mode auto-handoff. If the user says any of
+    // the execute-intent phrases while in Plan Mode, automatically flip
+    // to Step Mode and proceed instead of refusing. The old behavior
+    // forced users to manually Shift+Tab between modes — friction with
+    // no upside. We keep a visible note so the mode switch isn't silent.
+    const EXECUTE_INTENT = /^\s*(execute|go|do it|begin|start|run it|run that|ship it|make it|build it|produce it|kick it off|send it)[\s!.]*$/i;
+    let effectiveCreationMode = creationMode;
+    let autoHandoffNote: string | null = null;
+    if (creationMode === "plan" && EXECUTE_INTENT.test(content)) {
+      setCreationMode("step");
+      effectiveCreationMode = "step";
+      autoHandoffNote =
+        "Switched to **Step Mode** — generating the plan you just wrote.";
+    }
+
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
       content: finalContent,
     };
     setMessages((prev) => [...prev, userMessage]);
+    if (autoHandoffNote) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: autoHandoffNote!,
+        },
+      ]);
+    }
     setIsThinking(true);
     setError(null);
 
@@ -1272,6 +1596,41 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
     const history = messages
       .filter((m) => m.id !== "initial")
       .map((m) => ({ role: m.role, content: m.content }));
+
+    // WHY: Read the most recent video project's references so the AI knows
+    // what's already attached (products/envs the user picked via the inline
+    // picker). Without this the AI forgets to tag them and Seedance gets
+    // generic videos with no character/prop consistency.
+    let currentProjectReferences:
+      | Array<{ id: string; url: string; label: string; category?: "character" | "prop" | "scene" }>
+      | undefined;
+    let activeVideoProjectId: string | undefined;
+    try {
+      const saved = typeof window !== "undefined" ? localStorage.getItem("pm-video-projects") : null;
+      if (saved) {
+        const all = JSON.parse(saved) as Array<{
+          id: string;
+          createdAt?: string;
+          updatedAt?: string;
+          referenceImages?: Array<{ id: string; url: string; label: string; category?: "character" | "prop" | "scene" }>;
+        }>;
+        if (Array.isArray(all) && all.length > 0) {
+          const latest = [...all].sort((a, b) => {
+            const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
+            const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
+            return tb - ta;
+          })[0];
+          if (latest?.referenceImages?.length) {
+            activeVideoProjectId = latest.id;
+            currentProjectReferences = latest.referenceImages
+              .slice(0, 20)
+              .map((r) => ({ id: r.id, url: r.url, label: r.label, category: r.category }));
+          }
+        }
+      }
+    } catch {
+      /* ignore corrupt state */
+    }
 
     try {
       const res = await fetch("/api/ai/create-content", {
@@ -1283,11 +1642,13 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
           history,
           existingNodes: nodes.map((n) => ({ id: n.id, type: n.type, title: n.title })),
           fetchAssets: true,
-          creationMode,
+          creationMode: effectiveCreationMode,
           memories: memories.length > 0
             ? memories.map((m) => `[${m.type}] ${m.title}: ${m.content}`).join("\n")
             : undefined,
           projectName: projects.find((p) => p.id === activeProjectId)?.name ?? "Default Project",
+          currentProjectReferences,
+          activeVideoProjectId,
         }),
       });
 
@@ -1728,19 +2089,228 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
                       targetProjectId = recentVideoNode?.videoProjectId;
                     }
                     if (!targetProjectId) {
-                      // No active video project — just add to project canvas as a
-                      // standalone reference (the user can attach later)
                       return;
                     }
                     const category = (msg.productSearch?.category === "environment"
                       ? "scene"
                       : msg.productSearch?.category) as "character" | "prop" | "scene" | undefined;
+
+                    // WHY: Persist the picked product to the user's asset
+                    // library so they can @-mention it in future projects.
+                    // We fetch the remote image server-side and re-upload it
+                    // through the stable .ai pipeline, then use the new URL
+                    // for the canvas reference. If persistence fails we fall
+                    // back to the original URL so the user flow isn't blocked.
+                    let finalUrl = product.imageUrl;
+                    try {
+                      const persistRes = await fetch("/api/upload/image-from-url", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          url: product.imageUrl,
+                          label,
+                          category,
+                        }),
+                      });
+                      if (persistRes.ok) {
+                        const persistData = await persistRes.json();
+                        const stableUrl =
+                          persistData?.url ??
+                          persistData?.data?.url ??
+                          persistData?.resultUrl;
+                        if (stableUrl) finalUrl = stableUrl;
+                        // Auto-tag the asset with a friendly name so the
+                        // library UI shows @Label instead of a hash filename.
+                        try {
+                          const assetNames = JSON.parse(
+                            localStorage.getItem("pm-asset-names") ?? "{}",
+                          );
+                          assetNames[finalUrl] = label;
+                          localStorage.setItem(
+                            "pm-asset-names",
+                            JSON.stringify(assetNames),
+                          );
+                        } catch {
+                          /* ignore */
+                        }
+                      }
+                    } catch (err) {
+                      console.warn("[ProductPicker] library persist failed:", err);
+                    }
+
                     onCanvasAction({
                       type: "add-reference-image",
                       videoProjectId: targetProjectId,
-                      url: product.imageUrl,
+                      url: finalUrl,
                       label,
                       category,
+                    });
+                  }}
+                  onDeselect={async (product, label) => {
+                    // Look up the reference in the active project by URL or
+                    // label match, then dispatch remove-reference-image.
+                    try {
+                      const saved = localStorage.getItem("pm-video-projects");
+                      if (!saved) return;
+                      const all = JSON.parse(saved) as Array<{
+                        id: string;
+                        updatedAt?: string;
+                        createdAt?: string;
+                        referenceImages?: Array<{ id: string; url: string; label: string }>;
+                      }>;
+                      const targetProjectId =
+                        msg.productSearch?.videoProjectId ??
+                        [...all].sort((a, b) => {
+                          const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
+                          const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
+                          return tb - ta;
+                        })[0]?.id;
+                      if (!targetProjectId) return;
+                      const project = all.find((p) => p.id === targetProjectId);
+                      const ref = project?.referenceImages?.find(
+                        (r) => r.label === label || r.url === product.imageUrl,
+                      );
+                      if (!ref) return;
+                      onCanvasAction({
+                        type: "remove-reference-image",
+                        videoProjectId: targetProjectId,
+                        referenceId: ref.id,
+                      });
+                    } catch (err) {
+                      console.warn("[ProductPicker] onDeselect failed:", err);
+                    }
+                  }}
+                />
+              )}
+
+              {/* WHY: Score-first picker. Renders Lyria track options and
+                  fires select-score-track on pick, locking the timeline. */}
+              {msg.scorePicker && (
+                <InlineTrackPicker
+                  videoProjectId={msg.scorePicker.videoProjectId}
+                  tracks={msg.scorePicker.tracks}
+                  onSelect={async (track) => {
+                    // WHY: Before locking the track, fire the Gemini audio
+                    // analyzer to extract real musical section boundaries.
+                    // These markers become the timeline skeleton that the
+                    // Director snaps scene cuts to. If analysis fails we
+                    // still lock the track — the Director just falls back
+                    // to sceneIndex heuristics for that project.
+                    let markers: Array<{ time: number; label: string }> | undefined;
+                    try {
+                      const res = await fetch("/api/ai/analyze-score-markers", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          audioUrl: track.audioUrl,
+                          genre: track.genre,
+                          bpm: track.bpm,
+                          expectedDuration: track.duration,
+                        }),
+                      });
+                      if (res.ok) {
+                        const data = await res.json();
+                        const parsedMarkers =
+                          data?.data?.markers ?? data?.markers;
+                        if (Array.isArray(parsedMarkers) && parsedMarkers.length > 0) {
+                          markers = parsedMarkers;
+                        }
+                      } else {
+                        console.warn(
+                          "[ScoreMarkers] Analysis failed:",
+                          res.status,
+                        );
+                      }
+                    } catch (err) {
+                      console.warn("[ScoreMarkers] Analysis error:", err);
+                    }
+
+                    onCanvasAction({
+                      type: "select-score-track",
+                      videoProjectId: msg.scorePicker!.videoProjectId,
+                      trackId: track.id,
+                      markers,
+                    });
+                  }}
+                />
+              )}
+
+              {/* WHY: Production Brain citations — shows which research
+                  Claude consulted when answering. Trust-building transparency. */}
+              {msg.brainCitations && msg.brainCitations.matches.length > 0 && (
+                <div className="ml-11 mt-2 rounded-xl border border-royal/30 bg-royal/5 p-3">
+                  <div className="mb-2 flex items-center gap-2 text-[11px] text-royal">
+                    <span className="font-medium">Production Brain</span>
+                    <span className="text-ash/60">
+                      — {msg.brainCitations.matches.length} citation{msg.brainCitations.matches.length === 1 ? "" : "s"} for &ldquo;{msg.brainCitations.query}&rdquo;
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {msg.brainCitations.matches.map((match, idx) => (
+                      <details
+                        key={match.id || idx}
+                        className="rounded-md border border-smoke bg-graphite/60 p-2 text-[11px] text-ash"
+                      >
+                        <summary className="cursor-pointer list-none">
+                          <span className="font-medium text-cloud">
+                            [{idx + 1}] {match.source}
+                          </span>
+                          {match.section && (
+                            <span className="text-ash/60"> — {match.section}</span>
+                          )}
+                          <span className="ml-2 text-[10px] text-emerald-400">
+                            {(match.score * 100).toFixed(0)}% relevance
+                          </span>
+                        </summary>
+                        <div className="mt-2 whitespace-pre-wrap leading-relaxed text-ash/90">
+                          {match.content}
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* WHY: Voiceover fork — two-path picker (record yourself or
+                  AI voice). Appears after OFFER_VOICEOVER. Karaoke branch
+                  dispatches open-karaoke; AI branch fires GENERATE_VOICEOVER
+                  and the result lands on the project via set-voiceover. */}
+              {msg.voiceoverOffer && (
+                <InlineVoiceoverPicker
+                  videoProjectId={msg.voiceoverOffer.videoProjectId}
+                  script={msg.voiceoverOffer.script}
+                  recommendedVoiceId={msg.voiceoverOffer.recommendedVoiceId}
+                  onRecordKaraoke={() => {
+                    onCanvasAction({
+                      type: "open-karaoke",
+                      videoProjectId: msg.voiceoverOffer!.videoProjectId,
+                      script: msg.voiceoverOffer!.script,
+                    });
+                  }}
+                  onGenerateAiVoice={async (voiceId) => {
+                    const res = await fetch("/api/generate/voiceover", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        videoProjectId: msg.voiceoverOffer!.videoProjectId,
+                        voiceId,
+                        script: msg.voiceoverOffer!.script,
+                      }),
+                    });
+                    if (!res.ok) {
+                      const data = await res.json().catch(() => ({}));
+                      throw new Error(data?.error ?? "Voiceover failed");
+                    }
+                    const data = await res.json();
+                    const audioUrl =
+                      data?.data?.audioUrl ?? data?.audioUrl ?? data?.url;
+                    if (!audioUrl) throw new Error("No audio URL returned");
+                    onCanvasAction({
+                      type: "set-voiceover",
+                      videoProjectId: msg.voiceoverOffer!.videoProjectId,
+                      url: audioUrl,
+                      source: "ai",
+                      voiceId,
                     });
                   }}
                 />

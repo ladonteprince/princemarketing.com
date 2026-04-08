@@ -67,6 +67,22 @@ export interface VideoScene {
   progressStartedAt?: number; // Date.now() when generation started, for ETA calc
 }
 
+// WHY: Score-first production. The track gets picked BEFORE scenes are
+// generated so Gemini Director can snap scene durations to musical sections
+// (intro/verse/drop/outro) and the Critic can score against a fixed timeline.
+export interface ScoreTrackOption {
+  id: string;
+  prompt: string;
+  genre?: string;
+  bpm?: number;
+  duration: number; // seconds
+  audioUrl?: string;
+  status: "generating" | "ready" | "failed";
+  // Musical section markers produced by Gemini once the track is picked.
+  // Used to lock scene durations to beat-aligned boundaries.
+  markers?: Array<{ time: number; label: string }>;
+}
+
 export interface VideoProject {
   id: string;
   title: string;
@@ -74,6 +90,19 @@ export interface VideoProject {
   referenceImages: ReferenceImage[];
   audioUrl?: string;
   createdAt: string;
+  // WHY: Populated by CREATE_SCORE before any Seedance calls. The selected
+  // track becomes the timeline skeleton — every scene's duration is derived
+  // from which musical section it belongs to.
+  scoreTrackOptions?: ScoreTrackOption[];
+  selectedScoreTrackId?: string;
+  scoreMarkers?: Array<{ time: number; label: string }>;
+  // WHY: Voiceover fork. Either the user records their own via karaoke
+  // OR we generate an ElevenLabs AI voice. Either path produces an
+  // audio URL the final stitch layers over the music bed.
+  voiceoverScript?: Array<{ startTime: number; endTime: number; text: string }>;
+  voiceoverUrl?: string;
+  voiceoverSource?: "karaoke" | "ai";
+  voiceoverVoiceId?: string;
 }
 
 // Chat-to-canvas action types
@@ -90,6 +119,11 @@ export type CanvasAction =
   | { type: "stitch-video"; videoProjectId: string }
   | { type: "set-scene-mode"; videoProjectId: string; sceneIndex: number; mode: VideoSceneMode }
   | { type: "add-reference-image"; videoProjectId: string; url: string; label: string; category?: "character" | "prop" | "scene" }
+  | { type: "remove-reference-image"; videoProjectId: string; referenceId: string }
+  | { type: "add-score-options"; videoProjectId: string; options: ScoreTrackOption[] }
+  | { type: "select-score-track"; videoProjectId: string; trackId: string; markers?: Array<{ time: number; label: string }> }
+  | { type: "set-voiceover-script"; videoProjectId: string; script: Array<{ startTime: number; endTime: number; text: string }> }
+  | { type: "set-voiceover"; videoProjectId: string; url: string; source: "karaoke" | "ai"; voiceId?: string }
   | { type: "tag-reference-to-scene"; videoProjectId: string; sceneIndex: number; refLabel: string }
   | { type: "open-karaoke"; videoProjectId: string; script: Array<{ startTime: number; endTime: number; text: string }> }
   | { type: "set-scene-score"; videoProjectId: string; sceneId: string; score: number };

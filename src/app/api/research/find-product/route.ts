@@ -40,18 +40,40 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!process.env.FIRECRAWL_API_KEY) {
+      return NextResponse.json(
+        { error: "Search backend not configured", code: "API_KEY_MISSING", query: parsed.data.query, count: 0, products: [] },
+        { status: 503 },
+      );
+    }
+
     const products = await findProducts(parsed.data.query, parsed.data.limit ?? 5);
+
+    if (products.length === 0) {
+      return NextResponse.json({
+        query: parsed.data.query,
+        count: 0,
+        products: [],
+        code: "NO_IMAGES" as const,
+        message: `No products found for "${parsed.data.query}" — try a more specific search.`,
+      });
+    }
 
     return NextResponse.json({
       query: parsed.data.query,
       count: products.length,
       products,
+      code: "OK" as const,
     });
   } catch (error) {
     console.error("[FindProduct] Error:", error);
+    const isAbort = error instanceof Error && error.name === "AbortError";
     return NextResponse.json(
-      { error: "Product search failed" },
-      { status: 500 },
+      {
+        error: isAbort ? "Search timed out" : "Product search failed",
+        code: isAbort ? ("TIMEOUT" as const) : ("UPSTREAM_ERROR" as const),
+      },
+      { status: isAbort ? 504 : 500 },
     );
   }
 }
