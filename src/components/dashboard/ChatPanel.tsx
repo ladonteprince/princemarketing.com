@@ -1127,7 +1127,14 @@ function parseContentActions(
   return { actions, nodeRefs };
 }
 
-const CHAT_STORAGE_KEY = "pm-chat-messages";
+// WHY: Chat history is per-project. Each project gets its own key
+// "pm-chat-messages-{projectId}" so switching projects loads the
+// conversation that belongs to that project — and starting a fresh
+// project gives you a fresh chat instead of leaking the last project's
+// context. The legacy unscoped "pm-chat-messages" key is migrated into
+// the default project on first load.
+const CHAT_STORAGE_KEY_PREFIX = "pm-chat-messages-";
+const LEGACY_CHAT_STORAGE_KEY = "pm-chat-messages";
 const MEMORIES_STORAGE_KEY = "pm-ai-memories";
 
 type Project = {
@@ -1146,11 +1153,30 @@ type AIMemory = {
 
 export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPanelProps) {
   const { data: session } = useSession();
+  // WHY: Initial messages load from the active project's per-project key.
+  // We resolve the active project ID synchronously here (before the
+  // useState below sets it) by reading localStorage directly so the
+  // first paint already shows the right conversation.
   const [messages, setMessages] = useState<Message[]>(() => {
     if (typeof window === "undefined") return [INITIAL_MESSAGE];
-    const saved = localStorage.getItem(CHAT_STORAGE_KEY);
+    const initialProjectId = localStorage.getItem("pm-active-project") || "default";
+    const projectKey = `${CHAT_STORAGE_KEY_PREFIX}${initialProjectId}`;
+    // First, try the per-project key
+    const saved = localStorage.getItem(projectKey);
     if (saved) {
       try { return JSON.parse(saved); } catch { /* ignore corrupt data */ }
+    }
+    // Migrate legacy unscoped chat into the default project on first run
+    if (initialProjectId === "default") {
+      const legacy = localStorage.getItem(LEGACY_CHAT_STORAGE_KEY);
+      if (legacy) {
+        try {
+          const parsed = JSON.parse(legacy);
+          localStorage.setItem(projectKey, legacy);
+          localStorage.removeItem(LEGACY_CHAT_STORAGE_KEY);
+          return parsed;
+        } catch { /* ignore */ }
+      }
     }
     return [INITIAL_MESSAGE];
   });
@@ -1291,17 +1317,75 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
     localStorage.setItem(memoriesKey, JSON.stringify(memories));
   }, [memories, memoriesKey]);
 
-  // Persist chat messages to localStorage (keep last 50 to prevent bloat)
+  // Persist chat messages to the ACTIVE project's per-project key.
+  // Keep last 50 to prevent bloat. Skip the initial-greeting-only state
+  // so we don't waste localStorage on empty conversations.
+  const chatStorageKey = `${CHAT_STORAGE_KEY_PREFIX}${activeProjectId}`;
   useEffect(() => {
     if (messages.length > 1) {
-      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages.slice(-50)));
+      localStorage.setItem(chatStorageKey, JSON.stringify(messages.slice(-50)));
     }
-  }, [messages]);
+  }, [messages, chatStorageKey]);
+
+  // WHY: When the user switches projects, load that project's chat history
+  // (or the initial greeting if it's brand new). Without this the chat from
+  // the previous project bleeds into the new one — which was the bug.
+  // We track the previous project ID to detect actual switches and skip the
+  // mount-time pass (the useState initializer already handled that).
+  const prevProjectIdRef = useRef(activeProjectId);
+  useEffect(() => {
+    if (prevProjectIdRef.current === activeProjectId) return;
+    prevProjectIdRef.current = activeProjectId;
+    const saved = localStorage.getItem(`${CHAT_STORAGE_KEY_PREFIX}${activeProjectId}`);
+    if (saved) {
+      try {
+        setMessages(JSON.parse(saved));
+        return;
+      } catch { /* fall through to initial */ }
+    }
+    setMessages([INITIAL_MESSAGE]);
+  }, [activeProjectId]);
 
   const handleClearChat = useCallback(() => {
-    localStorage.removeItem(CHAT_STORAGE_KEY);
+    localStorage.removeItem(chatStorageKey);
     setMessages([INITIAL_MESSAGE]);
-  }, []);
+  }, [chatStorageKey]);
+
+  // WHY: Project deletion. Removes the project from the projects list,
+  // its per-project chat history, and its per-project memories. Refuses
+  // to delete the very last remaining project (you must always have one
+  // home). If the deleted project was active, switches to the first
+  // remaining project — falling back to a fresh "Default Project" if
+  // we somehow ended up empty.
+  const handleDeleteProject = useCallback((projectId: string) => {
+    const project = projects.find((p) => p.id === projectId);
+    if (!project) return;
+    if (projects.length <= 1) {
+      alert("You must have at least one project. Create another before deleting this one.");
+      return;
+    }
+    const ok = confirm(
+      `Delete project "${project.name}"?\n\nThis will permanently remove its chat history and memories. Generated assets will not be deleted.`,
+    );
+    if (!ok) return;
+
+    // Clean up per-project storage
+    localStorage.removeItem(`${CHAT_STORAGE_KEY_PREFIX}${projectId}`);
+    localStorage.removeItem(`pm-ai-memories-${projectId}`);
+
+    setProjects((prev) => {
+      const next = prev.filter((p) => p.id !== projectId);
+      localStorage.setItem("pm-projects", JSON.stringify(next));
+      return next;
+    });
+
+    // If we just deleted the active project, switch to the first remaining
+    if (activeProjectId === projectId) {
+      const remaining = projects.filter((p) => p.id !== projectId);
+      const fallback = remaining[0]?.id ?? "default";
+      setActiveProjectId(fallback);
+    }
+  }, [projects, activeProjectId]);
 
   const userName = session?.user?.name ?? "You";
 
@@ -1810,16 +1894,33 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
               <div className="absolute left-0 top-full z-30 mt-1 w-56 rounded-xl border border-smoke bg-graphite p-2 shadow-xl">
                 <div className="text-[9px] uppercase tracking-wider text-ash/50 font-medium px-2 mb-1">Projects</div>
                 {projects.map((p) => (
-                  <button
+                  <div
                     key={p.id}
-                    onClick={() => { setActiveProjectId(p.id); setShowProjectPicker(false); }}
-                    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] transition-colors cursor-pointer ${
+                    className={`group flex w-full items-center gap-2 rounded-lg pl-2 pr-1 py-1.5 text-[11px] transition-colors ${
                       p.id === activeProjectId ? "bg-royal/10 text-royal" : "text-ash hover:text-cloud hover:bg-slate"
                     }`}
                   >
-                    <FolderOpen size={12} />
-                    {p.name}
-                  </button>
+                    <button
+                      onClick={() => { setActiveProjectId(p.id); setShowProjectPicker(false); }}
+                      className="flex flex-1 items-center gap-2 cursor-pointer truncate text-left"
+                    >
+                      <FolderOpen size={12} />
+                      <span className="truncate">{p.name}</span>
+                    </button>
+                    {/* WHY: Delete button — only revealed on hover so it
+                        doesn't clutter the picker. Refuses to delete the
+                        last remaining project. */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteProject(p.id);
+                      }}
+                      title="Delete project"
+                      className="flex h-5 w-5 items-center justify-center rounded text-ash/40 opacity-0 transition-opacity hover:bg-rose-500/20 hover:text-rose-300 group-hover:opacity-100"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
                 ))}
                 <div className="border-t border-smoke/30 mt-1 pt-1">
                   <button
