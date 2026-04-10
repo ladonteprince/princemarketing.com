@@ -64,6 +64,21 @@ const requestSchema = z.object({
     .max(20)
     .optional(),
   activeVideoProjectId: z.string().optional(),
+  // WHY: Resolved @-mentions from the user's message. The frontend
+  // extracted real asset URLs from its mention library; we inject these
+  // into the system prompt as a "MENTIONED ASSETS" block so the AI uses
+  // real URLs in ADD_REFERENCE_IMAGE instead of hallucinating placeholders.
+  mentionedAssets: z
+    .array(
+      z.object({
+        tag: z.string(),
+        label: z.string(),
+        url: z.string().url(),
+        type: z.string().optional(),
+      }),
+    )
+    .max(20)
+    .optional(),
 });
 
 // WHY: Agentic system prompt — tells Claude to return structured action blocks
@@ -175,6 +190,46 @@ PROACTIVELY when making non-obvious creative calls — citing research is
 trust-building, not showing off. Never fabricate citations; if the brain
 returns nothing, say so and make the call from first principles.
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EXECUTION CONTRACT — READ THIS BEFORE EVERY RESPONSE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+When the user says any of: "execute", "go", "do it", "run it", "begin",
+"start", "ship it", "make it", "build it", "produce it", "send it" — OR
+any unambiguous instruction to generate the planned video — you are
+REQUIRED to emit a CREATE_VIDEO action with a populated scenes array IN
+THE SAME RESPONSE. Reference setup actions alone (ADD_REFERENCE_IMAGE,
+TAG_REFERENCE_TO_SCENE) DO NOT generate video. If you only emit
+reference setup actions without CREATE_VIDEO, NOTHING WILL HAPPEN — the
+user will see "Tagged reference to scene N" status messages but no
+actual video clips, no scenes on the canvas, and a frustrated session.
+This is the most common failure mode. Do not let it happen.
+
+The CORRECT execute response shape is:
+1. ADD_REFERENCE_IMAGE for any new refs you need (use REAL urls only —
+   from the MENTIONED ASSETS block, the CURRENT VIDEO PROJECT REFERENCES
+   block, or the asset list. NEVER fabricate URLs or use placeholders
+   like "https://example.com/image.png" or "/placeholder.jpg".)
+2. CREATE_VIDEO with the full scenes array — durations, prompts, all
+   of it. The videoProjectId MAY be "auto" — the frontend assigns a real
+   UUID at execution time.
+3. TAG_REFERENCE_TO_SCENE for every relevant ref × every relevant scene.
+   These ONLY work if CREATE_VIDEO was emitted in the same response and
+   the sceneIndex you tag actually exists in that CREATE_VIDEO's scenes
+   array. Tagging into nonexistent scenes is silently dropped.
+
+URL HONESTY RULE — ABSOLUTE:
+- ADD_REFERENCE_IMAGE.url MUST be a real https URL from the MENTIONED
+  ASSETS block, the CURRENT VIDEO PROJECT REFERENCES block, the user's
+  asset list, or a freshly-completed FIND_PRODUCT result the user has
+  selected.
+- If the user @-tags an asset that is NOT in any of those blocks, the
+  asset does not exist. Tell the user clearly: "I don't see @TagName in
+  your library — can you upload it or do a product search?" Do NOT
+  fabricate a URL to keep the response moving.
+- This rule has zero exceptions. Fabricated URLs cause broken thumbnails
+  and silent generation failures downstream.
+
 If the user is just chatting or asking questions, respond normally WITHOUT any action or JSON blocks.`;
 
 export async function POST(request: Request) {
@@ -200,7 +255,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
-    const { message, history, existingNodes, creationMode, memories, projectName, currentProjectReferences, activeVideoProjectId } = parsed.data;
+    const { message, history, existingNodes, creationMode, memories, projectName, currentProjectReferences, activeVideoProjectId, mentionedAssets } = parsed.data;
 
     // WHY: Inject the user's social media context so the AI can give personalized advice.
     // e.g. "Based on your recent Instagram posts about sneakers..." instead of generic tips.
@@ -287,6 +342,7 @@ export async function POST(request: Request) {
     if (analyticsContext) contextSources.push("analytics_context");
     if (memories) contextSources.push("user_memories");
     if (currentProjectReferences?.length) contextSources.push("project_references");
+    if (mentionedAssets?.length) contextSources.push("mentioned_assets");
 
     // WHY: Tell the AI exactly which references are already attached to the active
     // video project so it can tag them in EVERY CREATE_VIDEO scene. Without this,
@@ -296,6 +352,18 @@ export async function POST(request: Request) {
       ? `\n\nCURRENT VIDEO PROJECT REFERENCES (already attached to project${activeVideoProjectId ? ` ${activeVideoProjectId}` : ""} — you MUST tag these in every relevant CREATE_VIDEO scene):\n${currentProjectReferences
           .map((r) => `- @${r.label}${r.category ? ` (${r.category})` : ""}: ${r.url}`)
           .join("\n")}\n\nCRITICAL: When outputting CREATE_VIDEO, output a TAG_REFERENCE_TO_SCENE action for EVERY relevant reference across ALL scenes. Characters should be tagged to every scene they appear in. Props (watches, suits, cars) should be tagged to scenes where they're visible. Environments should be tagged to scenes set there. Never forget a reference that's already in the project — the user added it for a reason.`
+      : "";
+
+    // WHY: User's message contained @-mentions like @LaDonte. The frontend
+    // resolved each tag to a real asset URL from the user's library. The AI
+    // MUST use these exact URLs when emitting ADD_REFERENCE_IMAGE for those
+    // tags — never invent a URL, never use a placeholder. If a tag wasn't
+    // resolved, it means the asset doesn't exist; tell the user instead of
+    // fabricating one.
+    const mentionedAssetsContext = mentionedAssets?.length
+      ? `\n\nMENTIONED ASSETS (resolved from the user's @-tags — use these EXACT URLs):\n${mentionedAssets
+          .map((m) => `- @${m.tag} → label="${m.label}", url=${m.url}${m.type ? `, type=${m.type}` : ""}`)
+          .join("\n")}\n\nCRITICAL: When the user @-tags an asset, you MUST emit an ADD_REFERENCE_IMAGE action with the EXACT url shown above (and the label shown). NEVER fabricate a URL or use a placeholder. If a user mentioned a tag that is NOT in the list above, the asset does not exist in their library — tell them so instead of inventing one. After ADD_REFERENCE_IMAGE, also emit TAG_REFERENCE_TO_SCENE for every relevant scene.`
       : "";
 
     const systemPrompt = WORKSPACE_SYSTEM_PROMPT.replace(
@@ -311,6 +379,7 @@ export async function POST(request: Request) {
       : "")
     + assetsContext
     + projectRefsContext
+    + mentionedAssetsContext
     + (memories
       ? `\n\nUSER MEMORIES (remembered from past conversations — use these to personalize your responses. Reference them naturally, e.g. "Based on what I remember about your brand..."):\n${memories}`
       : "")

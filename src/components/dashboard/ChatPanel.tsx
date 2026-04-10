@@ -196,6 +196,10 @@ async function executeAction(
   stepMode?: boolean,
   waitForApproval?: (sceneIndex: number) => Promise<void>,
   pendingReferences?: Array<{ url: string; label: string }>,
+  batchContext?: {
+    createVideoSceneCounts: Map<string, number>;
+    referenceLabels: Set<string>;
+  },
 ): Promise<{
   success: boolean;
   detail: string;
@@ -761,6 +765,25 @@ async function executeAction(
       if (!action.videoProjectId || action.sceneIndex == null || !action.refLabel) {
         return { success: false, detail: "Missing videoProjectId, sceneIndex, or refLabel" };
       }
+      // WHY: Pre-validate against the BATCH context (not localStorage,
+      // which has React-state-update races). batchContext is populated by
+      // processActions before any action runs — it knows every CREATE_VIDEO
+      // in this response and how many scenes each one declares, plus every
+      // ADD_REFERENCE_IMAGE label. Surfaces the real failure when the AI
+      // emits TAG without a matching CREATE_VIDEO in the same response.
+      const ctx = batchContext;
+      if (ctx) {
+        const sceneCount = ctx.createVideoSceneCounts.get(String(action.videoProjectId));
+        if (sceneCount == null) {
+          return { success: false, detail: `Cannot tag — video project ${action.videoProjectId} was not created in this response. CREATE_VIDEO must be emitted in the same response as TAG_REFERENCE_TO_SCENE.` };
+        }
+        if (action.sceneIndex >= sceneCount) {
+          return { success: false, detail: `Cannot tag — scene index ${action.sceneIndex} is out of range (CREATE_VIDEO declared ${sceneCount} scenes)` };
+        }
+        if (!ctx.referenceLabels.has(action.refLabel)) {
+          return { success: false, detail: `Cannot tag — reference "${action.refLabel}" was not added in this response or attached to the project. Emit ADD_REFERENCE_IMAGE first or check the spelling.` };
+        }
+      }
       onCanvasAction({
         type: "tag-reference-to-scene",
         videoProjectId: action.videoProjectId,
@@ -1231,10 +1254,22 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
       return saved.length > 0 ? saved : [{ id: "default", name: "Default Project", createdAt: new Date().toISOString() }];
     } catch { return [{ id: "default", name: "Default Project", createdAt: new Date().toISOString() }]; }
   });
-  const [activeProjectId, setActiveProjectId] = useState<string>(() => {
+  const [activeProjectId, setActiveProjectIdState] = useState<string>(() => {
     if (typeof window === "undefined") return "default";
     return localStorage.getItem("pm-active-project") || "default";
   });
+  // WHY: Wrap setActiveProjectId so every project switch ALSO writes the
+  // new active id to localStorage AND dispatches a custom event the
+  // dashboard listens to. Without the event, the dashboard never knows
+  // to swap its scoped canvas/video-project state — which was the
+  // "stale refs leak into new project" bug.
+  const setActiveProjectId = useCallback((id: string) => {
+    setActiveProjectIdState(id);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("pm-active-project", id);
+      window.dispatchEvent(new Event("pm-active-project-changed"));
+    }
+  }, []);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
 
   // Memories are scoped per project
@@ -1491,6 +1526,33 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
         }
       }
 
+      // WHY: Build a batch context the executor can use to pre-validate
+      // dependent actions like TAG_REFERENCE_TO_SCENE. The map records every
+      // CREATE_VIDEO in this batch and how many scenes it declared, plus
+      // every reference label that's in scope (this batch's
+      // ADD_REFERENCE_IMAGE actions PLUS already-attached refs from the
+      // active video project). Without this the AI could emit TAG actions
+      // pointing at scenes that don't exist and we'd silently no-op them.
+      const batchContext = {
+        createVideoSceneCounts: new Map<string, number>(),
+        referenceLabels: new Set<string>(),
+      };
+      for (const a of preprocessed) {
+        if (a.action === "CREATE_VIDEO" && a.videoProjectId) {
+          batchContext.createVideoSceneCounts.set(
+            String(a.videoProjectId),
+            Array.isArray(a.scenes) ? a.scenes.length : 0,
+          );
+        }
+        if (a.action === "ADD_REFERENCE_IMAGE" && a.label) {
+          batchContext.referenceLabels.add(String(a.label));
+        }
+      }
+      // Also accept already-attached project references as valid tag targets
+      for (const r of pendingReferences) {
+        batchContext.referenceLabels.add(r.label);
+      }
+
       // Initialize action statuses
       const statuses: ActionStatus[] = preprocessed.map((a) => ({
         action: a.action,
@@ -1599,6 +1661,7 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
             isStepMode,
             isStepMode ? waitForApproval : undefined,
             pendingReferences,
+            batchContext,
           );
         }
 
@@ -1689,6 +1752,36 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
       .filter((m) => m.id !== "initial")
       .map((m) => ({ role: m.role, content: m.content }));
 
+    // WHY: Parse @-mentions out of the user's message and resolve each
+    // tag to a real asset URL from the loaded mention library. The AI
+    // previously saw "@LaDonte" as plain text and hallucinated a
+    // placeholder URL when it emitted ADD_REFERENCE_IMAGE — leading to
+    // broken thumbnails ("?") in the reference library. Now we extract
+    // matched tags and pass them to the backend so the system prompt
+    // can inject a "MENTIONED ASSETS" block with real URLs.
+    const mentionRegex = /@([A-Za-z0-9_]+)/g;
+    const mentionedTags = new Set<string>();
+    let match: RegExpExecArray | null;
+    while ((match = mentionRegex.exec(content)) !== null) {
+      mentionedTags.add(match[1]);
+    }
+    const mentionedAssets = Array.from(mentionedTags)
+      .map((tag) => {
+        // Match by exact name (case-insensitive). The user types @LaDonte,
+        // we look for an asset whose name is "LaDonte" or "ladonte".
+        const asset = mentionAssets.find(
+          (a) => a.name?.toLowerCase() === tag.toLowerCase(),
+        );
+        if (!asset) return null;
+        return {
+          tag,
+          label: asset.name,
+          url: asset.url,
+          type: asset.type,
+        };
+      })
+      .filter((m): m is NonNullable<typeof m> => m !== null);
+
     // WHY: Read the most recent video project's references so the AI knows
     // what's already attached (products/envs the user picked via the inline
     // picker). Without this the AI forgets to tag them and Seedance gets
@@ -1741,6 +1834,7 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
           projectName: projects.find((p) => p.id === activeProjectId)?.name ?? "Default Project",
           currentProjectReferences,
           activeVideoProjectId,
+          mentionedAssets: mentionedAssets.length > 0 ? mentionedAssets : undefined,
         }),
       });
 

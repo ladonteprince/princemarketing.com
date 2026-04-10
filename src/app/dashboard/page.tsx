@@ -10,9 +10,37 @@ import { OnboardingChecklist } from "@/components/dashboard/OnboardingChecklist"
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import type { ContentNode, CanvasAction, VideoProject, VideoScene } from "@/types/canvas";
 
-const CANVAS_STORAGE_KEY = "pm-canvas-nodes";
-const VIDEO_PROJECTS_STORAGE_KEY = "pm-video-projects";
-const ACTIVE_VIDEO_STORAGE_KEY = "pm-active-video-project";
+// WHY: Canvas / video projects / active video project are now scoped to
+// the active CHAT project. Without scoping, a new chat project inherits
+// stale references and stale video projects from the previous one — the
+// "Catalina refs leaking into LaDonte_reels" bug. Each chat project gets
+// its own canvas state, video project map, and active-video pointer.
+//
+// On first load we migrate the legacy unscoped keys into the default
+// project so existing users don't lose their work.
+const CANVAS_STORAGE_PREFIX = "pm-canvas-nodes-";
+const VIDEO_PROJECTS_STORAGE_PREFIX = "pm-video-projects-";
+const ACTIVE_VIDEO_STORAGE_PREFIX = "pm-active-video-project-";
+const LEGACY_CANVAS_KEY = "pm-canvas-nodes";
+const LEGACY_VIDEO_PROJECTS_KEY = "pm-video-projects";
+const LEGACY_ACTIVE_VIDEO_KEY = "pm-active-video-project";
+const ACTIVE_CHAT_PROJECT_KEY = "pm-active-project";
+const PROJECT_CHANGED_EVENT = "pm-active-project-changed";
+
+function getActiveChatProjectId(): string {
+  if (typeof window === "undefined") return "default";
+  return localStorage.getItem(ACTIVE_CHAT_PROJECT_KEY) || "default";
+}
+
+function canvasKeyFor(projectId: string): string {
+  return `${CANVAS_STORAGE_PREFIX}${projectId}`;
+}
+function videoProjectsKeyFor(projectId: string): string {
+  return `${VIDEO_PROJECTS_STORAGE_PREFIX}${projectId}`;
+}
+function activeVideoKeyFor(projectId: string): string {
+  return `${ACTIVE_VIDEO_STORAGE_PREFIX}${projectId}`;
+}
 
 // Helpers to serialize/deserialize Map<string, VideoProject> as JSON
 function serializeVideoProjects(map: Map<string, VideoProject>): string {
@@ -24,10 +52,48 @@ function deserializeVideoProjects(json: string): Map<string, VideoProject> {
   return new Map(entries);
 }
 
+// One-time migration: lift the legacy unscoped keys into the default
+// project on first load. Idempotent — if the default project already
+// has scoped data, the legacy keys are deleted without overwriting.
+function migrateLegacyGlobalKeys() {
+  if (typeof window === "undefined") return;
+  const defaultId = "default";
+
+  const legacyCanvas = localStorage.getItem(LEGACY_CANVAS_KEY);
+  if (legacyCanvas && !localStorage.getItem(canvasKeyFor(defaultId))) {
+    localStorage.setItem(canvasKeyFor(defaultId), legacyCanvas);
+  }
+  if (legacyCanvas) localStorage.removeItem(LEGACY_CANVAS_KEY);
+
+  const legacyVideoProjects = localStorage.getItem(LEGACY_VIDEO_PROJECTS_KEY);
+  if (legacyVideoProjects && !localStorage.getItem(videoProjectsKeyFor(defaultId))) {
+    localStorage.setItem(videoProjectsKeyFor(defaultId), legacyVideoProjects);
+  }
+  if (legacyVideoProjects) localStorage.removeItem(LEGACY_VIDEO_PROJECTS_KEY);
+
+  const legacyActiveVideo = localStorage.getItem(LEGACY_ACTIVE_VIDEO_KEY);
+  if (legacyActiveVideo && !localStorage.getItem(activeVideoKeyFor(defaultId))) {
+    localStorage.setItem(activeVideoKeyFor(defaultId), legacyActiveVideo);
+  }
+  if (legacyActiveVideo) localStorage.removeItem(LEGACY_ACTIVE_VIDEO_KEY);
+}
+
 export default function DashboardPage() {
+  // Run legacy migration once before reading any scoped state.
+  if (typeof window !== "undefined") {
+    migrateLegacyGlobalKeys();
+  }
+
+  // WHY: Active chat project ID is the source of truth for which scoped
+  // keys we read from. ChatPanel manages the actual list and dispatches
+  // PROJECT_CHANGED_EVENT when the user switches; we listen and reload.
+  const [activeChatProjectId, setActiveChatProjectId] = useState<string>(() =>
+    getActiveChatProjectId(),
+  );
+
   const [nodes, setNodes] = useState<ContentNode[]>(() => {
     if (typeof window === "undefined") return [];
-    const saved = localStorage.getItem(CANVAS_STORAGE_KEY);
+    const saved = localStorage.getItem(canvasKeyFor(getActiveChatProjectId()));
     if (saved) {
       try { return JSON.parse(saved); } catch { /* ignore */ }
     }
@@ -36,7 +102,7 @@ export default function DashboardPage() {
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [videoProjects, setVideoProjects] = useState<Map<string, VideoProject>>(() => {
     if (typeof window === "undefined") return new Map();
-    const saved = localStorage.getItem(VIDEO_PROJECTS_STORAGE_KEY);
+    const saved = localStorage.getItem(videoProjectsKeyFor(getActiveChatProjectId()));
     if (saved) {
       try { return deserializeVideoProjects(saved); } catch { /* ignore */ }
     }
@@ -44,8 +110,41 @@ export default function DashboardPage() {
   });
   const [activeVideoProject, setActiveVideoProject] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
-    return localStorage.getItem(ACTIVE_VIDEO_STORAGE_KEY) || null;
+    return localStorage.getItem(activeVideoKeyFor(getActiveChatProjectId())) || null;
   });
+
+  // WHY: When the user switches chat projects via ChatPanel's picker,
+  // ChatPanel dispatches PROJECT_CHANGED_EVENT. We persist the current
+  // state under the OLD chat project's key, then reload state for the
+  // NEW chat project. This is what makes "new project = clean canvas".
+  useEffect(() => {
+    const handler = () => {
+      const newProjectId = getActiveChatProjectId();
+      if (newProjectId === activeChatProjectId) return;
+      setActiveChatProjectId(newProjectId);
+
+      // Load fresh scoped state
+      try {
+        const savedNodes = localStorage.getItem(canvasKeyFor(newProjectId));
+        setNodes(savedNodes ? JSON.parse(savedNodes) : []);
+      } catch {
+        setNodes([]);
+      }
+      try {
+        const savedVP = localStorage.getItem(videoProjectsKeyFor(newProjectId));
+        setVideoProjects(savedVP ? deserializeVideoProjects(savedVP) : new Map());
+      } catch {
+        setVideoProjects(new Map());
+      }
+      setActiveVideoProject(
+        localStorage.getItem(activeVideoKeyFor(newProjectId)) || null,
+      );
+      // Clear ephemeral karaoke session on project switch
+      setActiveKaraoke(null);
+    };
+    window.addEventListener(PROJECT_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(PROJECT_CHANGED_EVENT, handler);
+  }, [activeChatProjectId]);
 
   // WHY: Active karaoke session — when set, the VideoEditor renders the
   // KaraokeRecorder inline. Set by the OPEN_KARAOKE action from the chat
@@ -60,24 +159,27 @@ export default function DashboardPage() {
     { id: string; url: string; type: string; name?: string }[]
   >([]);
 
-  // Persist canvas nodes to localStorage
+  // Persist canvas nodes to the active chat project's scoped key
   useEffect(() => {
-    localStorage.setItem(CANVAS_STORAGE_KEY, JSON.stringify(nodes));
-  }, [nodes]);
+    localStorage.setItem(canvasKeyFor(activeChatProjectId), JSON.stringify(nodes));
+  }, [nodes, activeChatProjectId]);
 
-  // Persist video projects to localStorage
+  // Persist video projects to the active chat project's scoped key
   useEffect(() => {
-    localStorage.setItem(VIDEO_PROJECTS_STORAGE_KEY, serializeVideoProjects(videoProjects));
-  }, [videoProjects]);
+    localStorage.setItem(
+      videoProjectsKeyFor(activeChatProjectId),
+      serializeVideoProjects(videoProjects),
+    );
+  }, [videoProjects, activeChatProjectId]);
 
-  // Persist active video project to localStorage
+  // Persist active video project pointer to scoped key
   useEffect(() => {
     if (activeVideoProject) {
-      localStorage.setItem(ACTIVE_VIDEO_STORAGE_KEY, activeVideoProject);
+      localStorage.setItem(activeVideoKeyFor(activeChatProjectId), activeVideoProject);
     } else {
-      localStorage.removeItem(ACTIVE_VIDEO_STORAGE_KEY);
+      localStorage.removeItem(activeVideoKeyFor(activeChatProjectId));
     }
-  }, [activeVideoProject]);
+  }, [activeVideoProject, activeChatProjectId]);
 
   // Fetch recent assets on mount
   useEffect(() => {
