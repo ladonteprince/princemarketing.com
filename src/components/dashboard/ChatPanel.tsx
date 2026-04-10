@@ -43,7 +43,11 @@ type Message = {
   actionStatuses?: ActionStatus[];
   videoProjectId?: string; // Links to a video project for inline rendering
   // WHY: Product search results attached to this message for inline picker rendering.
-  productSearch?: {
+  // An array because the AI commonly fires multiple FIND_PRODUCT actions in a
+  // single response (e.g., searching for the boat, island, pier, and terminal
+  // all at once). Previously this was a single field and each subsequent
+  // search overwrote the previous one, so only the last picker rendered.
+  productSearches?: Array<{
     query: string;
     label: string;
     category?: "character" | "prop" | "environment";
@@ -55,7 +59,7 @@ type Message = {
       sourceDomain: string;
       price?: string;
     }>;
-  };
+  }>;
   // WHY: Score-first. Generated Lyria track options attached to this message
   // for inline picker rendering. User picks one → select-score-track action.
   scorePicker?: {
@@ -1529,7 +1533,11 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
                   // WHY: Attach videoProjectId so InlineVideoSet can render scenes inline
                   ...(result.videoProjectId ? { videoProjectId: result.videoProjectId } : {}),
                   // WHY: Attach productSearch results so InlineProductPicker can render
-                  ...(result.productSearch ? { productSearch: result.productSearch } : {}),
+                  // WHY: Append, don't overwrite — multiple FIND_PRODUCT
+                  // actions in one response each need their own inline picker.
+                  ...(result.productSearch
+                    ? { productSearches: [...(m.productSearches ?? []), result.productSearch] }
+                    : {}),
                   ...(result.scorePicker ? { scorePicker: result.scorePicker } : {}),
                   ...(result.brainCitations ? { brainCitations: result.brainCitations } : {}),
                   ...(result.voiceoverOffer ? { voiceoverOffer: result.voiceoverOffer } : {}),
@@ -2072,16 +2080,17 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
                   results as a tap-to-select grid. On select, auto-fires
                   ADD_REFERENCE_IMAGE so the chosen product becomes a usable
                   @-mention in subsequent video generations. */}
-              {msg.productSearch && (
+              {msg.productSearches?.map((productSearch, psIdx) => (
                 <InlineProductPicker
-                  query={msg.productSearch.query}
-                  label={msg.productSearch.label}
-                  products={msg.productSearch.products}
+                  key={`${productSearch.label}-${psIdx}`}
+                  query={productSearch.query}
+                  label={productSearch.label}
+                  products={productSearch.products}
                   onSelect={async (product, label) => {
                     // Resolve the active video project — use the one attached
                     // to the search if known, otherwise fall back to the most
                     // recent video project in canvas state.
-                    let targetProjectId = msg.productSearch?.videoProjectId;
+                    let targetProjectId = productSearch.videoProjectId;
                     if (!targetProjectId) {
                       const recentVideoNode = [...nodes]
                         .reverse()
@@ -2091,9 +2100,9 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
                     if (!targetProjectId) {
                       return;
                     }
-                    const category = (msg.productSearch?.category === "environment"
+                    const category = (productSearch.category === "environment"
                       ? "scene"
-                      : msg.productSearch?.category) as "character" | "prop" | "scene" | undefined;
+                      : productSearch.category) as "character" | "prop" | "scene" | undefined;
 
                     // WHY: Persist the picked product to the user's asset
                     // library so they can @-mention it in future projects.
@@ -2159,7 +2168,7 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
                         referenceImages?: Array<{ id: string; url: string; label: string }>;
                       }>;
                       const targetProjectId =
-                        msg.productSearch?.videoProjectId ??
+                        productSearch.videoProjectId ??
                         [...all].sort((a, b) => {
                           const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
                           const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
@@ -2181,7 +2190,7 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
                     }
                   }}
                 />
-              )}
+              ))}
 
               {/* WHY: Score-first picker. Renders Lyria track options and
                   fires select-score-track on pick, locking the timeline. */}

@@ -247,6 +247,13 @@ export default function DashboardPage() {
           break;
         }
         case "add-reference-image": {
+          // WHY: The action carries an optional category (character / prop /
+          // scene). Products picked from the inline picker pass
+          // "environment" which InlineProductPicker.onSelect translates to
+          // "scene" before dispatch. Previously this handler hardcoded
+          // "character" and ignored the action's category, which is why
+          // Catalina Island / Avalon Pier / Catalina Express were landing
+          // in CHARACTERS instead of ENVIRONMENTS.
           setVideoProjects((prev) => {
             const next = new Map(prev);
             const project = next.get(action.videoProjectId);
@@ -255,7 +262,7 @@ export default function DashboardPage() {
               id: crypto.randomUUID(),
               url: action.url,
               label: action.label,
-              category: "character" as const,
+              category: action.category ?? ("character" as const),
             };
             next.set(action.videoProjectId, {
               ...project,
