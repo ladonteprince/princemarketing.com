@@ -16,6 +16,9 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@auth/core": "^0.41.0",
+    "@google-cloud/storage": "^7.19.0",
+    "@google/genai": "^1.50.1",
+    "@pinecone-database/pinecone": "^7.2.0",
     "@prisma/client": "^6.3.0",
     "@splinetool/react-spline": "^4.1.0",
     "@splinetool/runtime": "^1.12.73",
