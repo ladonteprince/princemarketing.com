@@ -36,6 +36,69 @@ enum PlatformType {
   TIKTOK
   YOUTUBE
   GOOGLE_ANALYTICS
+  SNAPCHAT
+}
+
+enum AssetKind {
+  VIDEO_FINAL
+  VIDEO_VARIANT
+  VIDEO_CLIP
+  IMAGE_POSTER
+  IMAGE_STILL
+  AUDIO_NARRATION
+  AUDIO_TRACK
+  POEM_TEXT
+  CAPTION_TEXT
+}
+
+enum Placement {
+  FEED
+  STORY
+  REEL
+  SHORT
+  CAROUSEL
+  HIGHLIGHT
+  SPOTLIGHT
+  LONG_FORM
+  COMMUNITY_POST
+}
+
+enum EngagementType {
+  COMMENT
+  REPLY_TO_COMMENT
+  MENTION
+  DM
+  QUOTE
+  STORY_REPLY
+}
+
+enum DraftStatus {
+  PENDING
+  AUTO_APPROVED
+  APPROVED
+  SENT
+  EDITED_SENT
+  SKIPPED
+  FAILED
+}
+
+enum ContactTier {
+  COLD
+  WARM
+  LOYAL
+  VIP
+  MUTED
+  BLOCKED
+}
+
+enum IdeaStatus {
+  RAW
+  HOOK
+  SCRIPT
+  PRODUCING
+  SCHEDULED
+  PUBLISHED
+  ARCHIVED
 }
 
 enum MessageRole {
@@ -57,11 +120,24 @@ model User {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
+  autoReplySettings Json?
+  voicePersonaId    String?
+
   sessions        Session[]
   campaigns       Campaign[]
   calendarEntries CalendarEntry[]
   platforms       Platform[]
   chatSessions    ChatSession[]
+  assets          Asset[]
+  contacts        Contact[]
+  comments        Comment[]
+  directMessages  DirectMessage[]
+  draftReplies    DraftReply[]
+  ideas           Idea[]
+  storyArcs       StoryArc[]
+  inspirations    Inspiration[]
+  tracks          Track[]
+  highlights      HighlightCollection[]
 
   @@map("users")
 }
@@ -127,21 +203,34 @@ model Campaign {
 }
 
 model CalendarEntry {
-  id          String        @id @default(cuid())
-  userId      String
-  campaignId  String?
-  platform    PlatformType
-  title       String
-  content     String
-  mediaUrl    String?
-  scheduledAt DateTime
-  publishedAt DateTime?
-  status      ContentStatus @default(DRAFT)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id             String        @id @default(cuid())
+  userId         String
+  campaignId     String?
+  platform       PlatformType
+  platforms      PlatformType[]
+  placement      Placement     @default(FEED)
+  title          String
+  content        String
+  perPlatform    Json?
+  mediaUrl       String?
+  assetId        String?
+  variantId      String?
+  trackId        String?
+  coverFrameSec  Float?
+  source         String?
+  repurposedFrom String?
+  scheduledAt    DateTime
+  publishedAt    DateTime?
+  platformPostIds Json?
+  status         ContentStatus @default(DRAFT)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaign Campaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  asset    Asset?         @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  variant  AssetVariant?  @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  track    Track?         @relation(fields: [trackId], references: [id], onDelete: SetNull)
   analytics Analytics[]
 
   @@index([userId, scheduledAt])
@@ -157,6 +246,8 @@ model Platform {
   accessToken    String?
   refreshToken   String?
   tokenExpiresAt DateTime?
+  grantedScopes  String[]
+  manualMode     Boolean      @default(false)
   connected      Boolean      @default(false)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
@@ -175,10 +266,276 @@ model Analytics {
   clicks          Int      @default(0)
   shares          Int      @default(0)
   comments        Int      @default(0)
+  saves           Int      @default(0)
+  watchTimeSec   Int      @default(0)
   recordedAt      DateTime @default(now())
 
   calendarEntry CalendarEntry @relation(fields: [calendarEntryId], references: [id], onDelete: Cascade)
 
   @@index([calendarEntryId])
   @@map("analytics")
+}
+
+model Asset {
+  id          String    @id @default(cuid())
+  userId      String
+  kind        AssetKind
+  projectId   String?
+  episode     Int?
+  title       String?
+  archetype   String?
+  mode        String?
+  gcsUri      String
+  publicUrl   String?
+  durationSec Int?
+  width       Int?
+  height      Int?
+  bpm         Float?
+  trackId     String?
+  poemText    String?
+  metadata    Json      @default("{}")
+  pineconeIds String[]
+  embeddedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  track           Track?          @relation(fields: [trackId], references: [id], onDelete: SetNull)
+  variants        AssetVariant[]
+  calendarEntries CalendarEntry[]
+  ideas           Idea[]
+
+  @@index([userId, kind])
+  @@index([projectId])
+  @@map("assets")
+}
+
+model AssetVariant {
+  id            String   @id @default(cuid())
+  assetId       String
+  aspectRatio   String
+  durationSec   Int?
+  gcsUri        String
+  gradedFor     String?
+  coverFrameSec Float?
+  createdAt     DateTime @default(now())
+
+  asset           Asset           @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  calendarEntries CalendarEntry[]
+
+  @@index([assetId])
+  @@map("asset_variants")
+}
+
+model Track {
+  id          String   @id @default(cuid())
+  userId      String
+  gcsUri      String
+  title       String?
+  artist      String?
+  bpm         Float?
+  musicalKey  String?
+  energy      Float?
+  peakAt      Float[]
+  durationSec Int
+  mood        String?
+  licensed    Boolean  @default(false)
+  pineconeId  String?
+  createdAt   DateTime @default(now())
+
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assets          Asset[]
+  calendarEntries CalendarEntry[]
+
+  @@index([userId])
+  @@map("tracks")
+}
+
+model HighlightCollection {
+  id           String       @id @default(cuid())
+  userId       String
+  platform     PlatformType
+  title        String
+  coverAssetId String?
+  order        Int          @default(0)
+  assetIds     String[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, platform])
+  @@map("highlight_collections")
+}
+
+model Contact {
+  id               String       @id @default(cuid())
+  userId           String
+  platform         PlatformType
+  externalId       String
+  username         String?
+  displayName      String?
+  avatarUrl        String?
+  tier             ContactTier  @default(COLD)
+  profile          Json         @default("{}")
+  notes            String?
+  firstSeenAt      DateTime     @default(now())
+  lastSeenAt       DateTime     @default(now())
+  totalEngagements Int          @default(0)
+  autoApprove      Boolean      @default(false)
+  muted            Boolean      @default(false)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comments       Comment[]
+  directMessages DirectMessage[]
+  drafts         DraftReply[]
+
+  @@unique([userId, platform, externalId])
+  @@index([userId, tier])
+  @@index([lastSeenAt])
+  @@map("contacts")
+}
+
+model Comment {
+  id               String         @id @default(cuid())
+  userId           String
+  contactId        String
+  calendarEntryId  String?
+  platform         PlatformType
+  externalId       String
+  parentExternalId String?
+  type             EngagementType @default(COMMENT)
+  text             String
+  mediaUrl         String?
+  sentiment        Float?
+  intent           String?
+  pineconeId       String?
+  receivedAt       DateTime
+  createdAt        DateTime       @default(now())
+
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  drafts  DraftReply[]
+
+  @@unique([platform, externalId])
+  @@index([userId, receivedAt])
+  @@index([contactId])
+  @@map("comments")
+}
+
+model DirectMessage {
+  id         String       @id @default(cuid())
+  userId     String
+  contactId  String
+  platform   PlatformType
+  externalId String
+  direction  String
+  text       String
+  mediaUrl   String?
+  threadId   String?
+  sentiment  Float?
+  pineconeId String?
+  sentAt     DateTime
+  createdAt  DateTime     @default(now())
+
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  drafts  DraftReply[]
+
+  @@unique([platform, externalId])
+  @@index([userId, sentAt])
+  @@index([contactId, sentAt])
+  @@index([threadId])
+  @@map("direct_messages")
+}
+
+model DraftReply {
+  id             String       @id @default(cuid())
+  userId         String
+  contactId      String
+  commentId      String?
+  dmId           String?
+  platform       PlatformType
+  draftText      String
+  finalText      String?
+  confidence     Float
+  groundingRefs  Json?
+  status         DraftStatus  @default(PENDING)
+  scheduledFor   DateTime?
+  sentAt         DateTime?
+  platformPostId String?
+  error          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact Contact        @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  comment Comment?       @relation(fields: [commentId], references: [id], onDelete: SetNull)
+  dm      DirectMessage? @relation(fields: [dmId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([scheduledFor])
+  @@map("draft_replies")
+}
+
+model StoryArc {
+  id              String    @id @default(cuid())
+  userId          String
+  title           String
+  archetypeMode   String?
+  description     String?
+  targetEpisodes  Int?
+  bibleRef        String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ideas Idea[]
+
+  @@index([userId])
+  @@map("story_arcs")
+}
+
+model Idea {
+  id              String     @id @default(cuid())
+  userId          String
+  storyArcId      String?
+  title           String
+  body            String?
+  voiceMemoGcsUri String?
+  imageRefs       String[]
+  assetId         String?
+  hooks           Json?
+  platforms       PlatformType[]
+  status          IdeaStatus @default(RAW)
+  pineconeId      String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storyArc StoryArc? @relation(fields: [storyArcId], references: [id], onDelete: SetNull)
+  asset    Asset?    @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@map("ideas")
+}
+
+model Inspiration {
+  id         String       @id @default(cuid())
+  userId     String
+  sourceUrl  String
+  platform   PlatformType?
+  mediaGcsUri String?
+  title      String?
+  notes      String?
+  tags       String[]
+  pineconeId String?
+  scrapedAt  DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("inspirations")
 }
