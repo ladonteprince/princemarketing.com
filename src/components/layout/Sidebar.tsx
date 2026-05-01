@@ -16,6 +16,7 @@ import {
   ChevronRight,
   LogOut,
   X,
+  Sparkles,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -25,15 +26,19 @@ type NavItem = {
   icon: LucideIcon;
 };
 
-// WHY: Removed "AI Strategist" — the chat is now built into the Workspace canvas
-// and accessible via FloatingChat on all other pages.
+// WHY: Sidebar order reflects the production SOP — brief → plan → produce → manage
+// → schedule → publish → measure. Workspace is where the user briefs / chats with
+// the strategist. Storyboard is the cheap-keyframe approval gate before video gen.
+// Video Editor is where scenes get refined. Assets is the reference library.
+// Calendar / Campaigns / Analytics tail the workflow as distribution + measurement.
 const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { label: "Workspace", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Storyboard", href: "/dashboard/storyboard", icon: Sparkles },
+  { label: "Video Editor", href: "/dashboard/video/new", icon: Film },
+  { label: "Assets", href: "/dashboard/assets", icon: FolderOpen },
   { label: "Calendar", href: "/dashboard/calendar", icon: Calendar },
   { label: "Campaigns", href: "/dashboard/campaigns", icon: Megaphone },
   { label: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
-  { label: "Video Editor", href: "/dashboard/video/new", icon: Film },
-  { label: "Assets", href: "/dashboard/assets", icon: FolderOpen },
 ] as const;
 
 const BOTTOM_ITEMS: ReadonlyArray<NavItem> = [

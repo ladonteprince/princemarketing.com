@@ -6,3 +6,17 @@ node_modules/
 dist/
 *.log
 .DS_Store
+
+# Build artifacts
+tsconfig.tsbuildinfo
+
+# Word lock files (open-document markers)
+~$*
+
+# Python build artifacts
+__pycache__/
+*.pyc
+scripts/stc-reindex/out/
+
+# Training data (binary photos — upload via /dashboard/assets instead)
+public/training/
