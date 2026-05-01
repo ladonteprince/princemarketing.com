@@ -1865,6 +1865,35 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
       /* ignore corrupt state */
     }
 
+    // WHY: Read approved storyboard frames from localStorage if the user just
+    // came back from /dashboard/storyboard with approvals. The strategist will
+    // inject these as a STORYBOARD APPROVED block so the Video Engineer uses
+    // them as firstFrameUrl on the next CREATE_VIDEO. Cleared after use so it
+    // doesn't replay on every subsequent message.
+    let approvedStoryboard: {
+      videoProjectId: string;
+      approvedAt: string;
+      scenes: Array<{
+        sceneIndex: number;
+        prompt: string;
+        sourceImage: string;
+        aspectRatio?: "16:9" | "9:16" | "1:1";
+      }>;
+    } | undefined;
+    try {
+      if (typeof window !== "undefined") {
+        const raw = localStorage.getItem("pm-storyboard-approved");
+        if (raw) {
+          const parsed = JSON.parse(raw) as typeof approvedStoryboard;
+          if (parsed && Array.isArray(parsed.scenes) && parsed.scenes.length > 0) {
+            approvedStoryboard = parsed;
+          }
+        }
+      }
+    } catch {
+      /* ignore corrupt approved-storyboard payload */
+    }
+
     try {
       const res = await fetch("/api/ai/create-content", {
         method: "POST",
@@ -1883,8 +1912,17 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
           currentProjectReferences,
           activeVideoProjectId,
           mentionedAssets: mentionedAssets.length > 0 ? mentionedAssets : undefined,
+          approvedStoryboard,
         }),
       });
+
+      // WHY: Clear approved-storyboard payload after the request lands —
+      // strategist now has it in context and will emit CREATE_VIDEO with i2v
+      // firstFrameUrls. If we don't clear, every subsequent message would
+      // re-trigger Video Engineer mode, which is wrong.
+      if (approvedStoryboard && typeof window !== "undefined") {
+        localStorage.removeItem("pm-storyboard-approved");
+      }
 
       if (!res.ok) {
         throw new Error("Failed to get AI response");

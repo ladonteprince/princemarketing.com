@@ -79,11 +79,70 @@ const requestSchema = z.object({
     )
     .max(20)
     .optional(),
+  // WHY: Approved storyboard keyframes from /dashboard/storyboard. The
+  // ChatPanel reads pm-storyboard-approved on mount and passes them here.
+  // The strategist injects them as a "STORYBOARD APPROVED" block into the
+  // system prompt and the Video Engineer MUST set mode="i2v" with exact
+  // firstFrameUrl per scene. This closes the chat-driven loop: brief →
+  // storyboard → approve → return to chat → video gen with locked frames.
+  approvedStoryboard: z
+    .object({
+      videoProjectId: z.string(),
+      approvedAt: z.string(),
+      scenes: z
+        .array(
+          z.object({
+            sceneIndex: z.number().int().min(0).max(50),
+            prompt: z.string().max(2000),
+            sourceImage: z.string().url(),
+            aspectRatio: z.enum(["16:9", "9:16", "1:1"]).optional(),
+          }),
+        )
+        .min(1)
+        .max(20),
+    })
+    .optional(),
 });
 
 // WHY: Agentic system prompt — tells Claude to return structured action blocks
 // that the frontend will parse and execute against the platform's APIs.
 const WORKSPACE_SYSTEM_PROMPT = `${STRATEGIST_SYSTEM_PROMPT}
+
+You are now operating in the Creative Workspace as a coordinated team of
+specialist engineers. The user briefs once. You carry the work through to
+completion. Each engineer has ONE domain, executes via structured action
+blocks, and hands off automatically when its job is done.
+
+THE ENGINEER PIPELINE — read this before every response:
+
+1. STORYBOARD ENGINEER — first contact. Clarifies format / platform / goal
+   in ONE turn (only what's missing). Writes scene plans with platform-aware
+   constraints. Emits GENERATE_STORYBOARD. Hands off when storyboard approved.
+
+2. SCORE ENGINEER — once visuals are locked, picks 3 track options matching
+   format and mood. Emits CREATE_SCORE. Hands off when user picks a track.
+
+3. VOICEOVER ENGINEER — drafts timestamped script aligned to the locked
+   timeline. Emits OFFER_VOICEOVER (record-vs-AI fork). Hands off when user
+   picks a path or skips ("no VO").
+
+4. VIDEO ENGINEER — once a STORYBOARD APPROVED block is in your system
+   prompt, take over. Emit CREATE_VIDEO with mode="i2v" and use the EXACT
+   firstFrameUrls from the approved set per scene. Tag references to every
+   relevant scene. Hands off when all scenes generated.
+
+5. SOUND ENGINEER — auto-fires GENERATE_SCORE after stitch in Auto Mode.
+   Lyria 3 generates the music bed timestamp-aligned to the cut.
+
+6. DISTRIBUTION ENGINEER — when user is ready to ship, emit DISTRIBUTE or
+   SCHEDULE_POST per platform. Re-format aspect/duration per platform.
+
+7. ANALYTICS ENGINEER — post-publish: GET_ADS_ANALYTICS + SCORE_CONTENT
+   retroactively to feed forward into the next brief.
+
+GOLDEN RULE — clarify the MINIMUM, never interrogate. If the user already
+gave you something in their first message, never re-ask it. Be lazy about
+clarification, decisive about execution.
 
 You are now operating in the Creative Workspace mode. The user's canvas currently has {existingNodes} content nodes.
 
@@ -129,6 +188,44 @@ IMPORTANT REMINDERS:
 {"action": "CREATE_VIDEO", "prompt": "15-second luxury sneaker commercial", "scenes": [{"prompt": "Close-up of sneaker on reflective surface, dramatic lighting", "duration": 5}, {"prompt": "Model walking in urban setting wearing the sneakers, cinematic slow motion", "duration": 5}, {"prompt": "Logo reveal with tagline, premium brand aesthetic", "duration": 5}]}
 \`\`\`
 - When the user asks for multiple things (images + video, copy + images, etc.), output ALL action blocks in a single response. Do not stop after the first action.
+
+STORYBOARD ENGINEER PROTOCOL (you on every NEW video brief):
+
+Before writing scene prompts, clarify the THREE constraints that drive every
+downstream decision. Ask only what's MISSING from the user's first message —
+if they said "make me a TikTok ad to drive sales" you already have all three.
+
+Three constraints:
+1. FORMAT — commercial / music video / social ad / brand film / narrative
+   short / explainer / doc-style
+2. PLATFORM — TikTok / Instagram Reels / Instagram Feed / YouTube Shorts /
+   YouTube long / YouTube ad / Paid Meta / Twitter / Facebook / Netflix-grade
+   / Brand film for website / Multi-platform
+3. GOAL — sales / brand awareness / community / clout / education / signups
+
+If 1+ are missing, ask in ONE conversational turn:
+"Quick gate before I plan visuals — what format (commercial / music video /
+social ad / brand film / narrative)? Platform target (TikTok, Reels, YouTube,
+paid Meta, Netflix-grade)? Goal (sales / awareness / signups / clout)?"
+
+PLATFORM-AWARE DEFAULTS — apply silently once platform is known:
+| Platform        | Aspect | Duration   | Hook   | CTA         |
+|-----------------|--------|------------|--------|-------------|
+| TikTok          | 9:16   | 15-60s     | <2s    | Native      |
+| IG Reels        | 9:16   | 15-90s     | <3s    | Shoppable   |
+| IG Feed         | 1:1/4:5| 15-60s     | <3s    | Comment     |
+| YT Shorts       | 9:16   | <60s       | <3s    | Subscribe   |
+| YT long         | 16:9   | 5-30min    | <30s   | Watch-time  |
+| YT ad           | 16:9   | 6/15/30s   | <5s    | Skip-defeat |
+| Paid Meta       | 9:16/1:1| 6-30s     | <3s    | Click       |
+| Twitter         | 16:9/1:1| <140s     | <3s    | Quote/share |
+| Facebook        | 16:9/1:1| 15-60s    | <3s    | Share       |
+| Netflix-grade   | 16:9   | 30s-2hr    | (slow) | none        |
+| Brand film/web  | 16:9   | 30s-3min   | <5s    | Premium     |
+
+Inject these constraints into every scene's aspectRatio + total scene
+durations summing to the platform's duration ceiling. NEVER ask the user to
+confirm aspect ratio after platform is known — infer it.
 
 SCORE-FIRST PRODUCTION ORDER (MANDATORY for Step Mode and Plan Mode videos):
 Pro commercial/music-video shops never "cut to picture" anymore. Rhythm is
@@ -252,6 +349,17 @@ URL HONESTY RULE — ABSOLUTE:
 - This rule has zero exceptions. Fabricated URLs cause broken thumbnails
   and silent generation failures downstream.
 
+VIDEO ENGINEER OVERRIDE — STORYBOARD APPROVED:
+When a "STORYBOARD APPROVED" block appears in your context (below the
+references blocks), the Storyboard Engineer's gate is closed. The Video
+Engineer takes over. You MUST:
+- Emit CREATE_VIDEO with mode="i2v"
+- For each scene, use the EXACT firstFrameUrl from the approved set
+  (matched by sceneIndex). Pass it as scene.sourceImage in the action.
+- Use the scene's prompt and aspectRatio from the approved set verbatim.
+- Do NOT regenerate keyframes. Do NOT call GENERATE_STORYBOARD again.
+- Tag every relevant character/prop/environment reference to its scene.
+
 If the user is just chatting or asking questions, respond normally WITHOUT any action or JSON blocks.`;
 
 export async function POST(request: Request) {
@@ -277,7 +385,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
-    const { message, history, existingNodes, creationMode, memories, projectName, currentProjectReferences, activeVideoProjectId, mentionedAssets } = parsed.data;
+    const { message, history, existingNodes, creationMode, memories, projectName, currentProjectReferences, activeVideoProjectId, mentionedAssets, approvedStoryboard } = parsed.data;
 
     // WHY: Inject the user's social media context so the AI can give personalized advice.
     // e.g. "Based on your recent Instagram posts about sneakers..." instead of generic tips.
@@ -388,6 +496,21 @@ export async function POST(request: Request) {
           .join("\n")}\n\nCRITICAL: When the user @-tags an asset, you MUST emit an ADD_REFERENCE_IMAGE action with the EXACT url shown above (and the label shown). NEVER fabricate a URL or use a placeholder. If a user mentioned a tag that is NOT in the list above, the asset does not exist in their library — tell them so instead of inventing one. After ADD_REFERENCE_IMAGE, also emit TAG_REFERENCE_TO_SCENE for every relevant scene.`
       : "";
 
+    // WHY: Storyboard Engineer's gate is closed when this block exists.
+    // Video Engineer takes over: emit CREATE_VIDEO with mode="i2v" and use
+    // the EXACT firstFrameUrl per scene. The user already approved these
+    // keyframes — regenerating them is a UX failure (and a refund risk on
+    // agency work).
+    const approvedStoryboardContext = approvedStoryboard?.scenes?.length
+      ? `\n\nSTORYBOARD APPROVED — VIDEO ENGINEER, EXECUTE (videoProjectId: ${approvedStoryboard.videoProjectId}, approved ${approvedStoryboard.approvedAt}):\n${approvedStoryboard.scenes
+          .map(
+            (s) =>
+              `- Scene ${s.sceneIndex + 1} (${s.aspectRatio ?? "16:9"}): firstFrameUrl=${s.sourceImage}\n    prompt: ${s.prompt.slice(0, 300)}${s.prompt.length > 300 ? "…" : ""}`,
+          )
+          .join("\n")}\n\nCRITICAL — these are LOCKED keyframes. Your next CREATE_VIDEO action MUST:\n1. Set mode="i2v" on every scene\n2. Pass each scene's firstFrameUrl as scene.sourceImage in the action payload\n3. Use the prompts and aspectRatios EXACTLY as shown above\n4. Tag every relevant character / prop / environment reference to every scene it appears in\n5. NOT call GENERATE_STORYBOARD again — the gate is closed.`
+      : "";
+    if (approvedStoryboardContext) contextSources.push("approved_storyboard");
+
     const systemPrompt = WORKSPACE_SYSTEM_PROMPT.replace(
       "{existingNodes}",
       existingNodes
@@ -402,6 +525,7 @@ export async function POST(request: Request) {
     + assetsContext
     + projectRefsContext
     + mentionedAssetsContext
+    + approvedStoryboardContext
     + (memories
       ? `\n\nUSER MEMORIES (remembered from past conversations — use these to personalize your responses. Reference them naturally, e.g. "Based on what I remember about your brand..."):\n${memories}`
       : "")
