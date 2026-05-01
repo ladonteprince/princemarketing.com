@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { Sparkles, Loader2, ArrowRight, AlertCircle } from "lucide-react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { Sparkles, Loader2, AlertCircle, MessageSquare } from "lucide-react";
 import {
   StoryboardStrip,
   generateStoryboard,
@@ -9,110 +9,136 @@ import {
   type StoryboardResponse,
 } from "@/components/dashboard/StoryboardStrip";
 
-// WHY: The Storyboard tab is the cheap-keyframe approval gate before any
-// expensive video generation. User briefs scenes here (or has the Workspace
-// strategist push them in via GENERATE_STORYBOARD), reviews each keyframe,
-// approves or regenerates, then ships the approved set to the Video Editor
-// for Seedance i2v generation. This is the surface that powers the agency's
-// "send the client a storyboard for sign-off" workflow.
+// WHY: The Storyboard tab is purely a chat-driven destination — the user does
+// NOT navigate here manually. The Workspace strategist emits a
+// GENERATE_STORYBOARD action which the ChatPanel handler stashes in
+// localStorage as `pm-storyboard-pending`, then redirects here. On mount we
+// read that payload, auto-fire the API, and present the keyframes for
+// approve / regenerate / remove. After approval we hand the approved frames
+// back via `pm-storyboard-approved` and route the user back to /dashboard
+// (Workspace) where the strategist picks up the next step (CREATE_VIDEO with
+// i2v + firstFrameUrl per scene).
 
-const DEMO_SCENES: Array<{
+type PendingScenePayload = {
+  sceneIndex: number;
   prompt: string;
   aspectRatio?: "16:9" | "9:16" | "1:1";
-}> = [
-  {
-    prompt:
-      "Wide establishing shot of a modern penthouse at golden hour, floor-to-ceiling windows facing a city skyline, warm cinematic lighting, dramatic atmosphere",
-    aspectRatio: "16:9",
-  },
-  {
-    prompt:
-      "Close-up of @LaDonte adjusting cufflinks, intense focus, sharp directional light, shallow depth of field, luxury commercial aesthetic",
-    aspectRatio: "16:9",
-  },
-  {
-    prompt:
-      "Medium shot of @LaDonte walking through penthouse interior with subtle confidence, motion blur in background, hard side lighting",
-    aspectRatio: "16:9",
-  },
-  {
-    prompt:
-      "Direct-to-camera shot of @LaDonte delivering a line, low angle, dramatic chiaroscuro lighting, brand-grade portrait composition",
-    aspectRatio: "16:9",
-  },
-];
+  referenceImages?: string[];
+};
+
+type PendingStoryboard = {
+  videoProjectId: string;
+  model: "nano-banana-pro" | "gpt-image-2";
+  scenes: PendingScenePayload[];
+  requestedAt: string;
+};
+
+const PENDING_KEY = "pm-storyboard-pending";
+const APPROVED_KEY = "pm-storyboard-approved";
 
 export default function StoryboardPage() {
   const [scenes, setScenes] = useState<StoryboardScene[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string>("");
   const [model, setModel] = useState<"nano-banana-pro" | "gpt-image-2">(
     "nano-banana-pro",
   );
-  const projectId = "demo-storyboard";
+  // WHY: Guard against double-fire on React strict-mode mount and HMR.
+  const hasMountedRef = useRef(false);
 
-  const handleGenerate = useCallback(async () => {
-    setError(null);
-    setIsGenerating(true);
+  // ─── Pipeline ──────────────────────────────────────────────────────
 
-    // Seed scenes in "generating" state
-    const seeded: StoryboardScene[] = DEMO_SCENES.map((s, i) => ({
-      sceneIndex: i,
-      prompt: s.prompt,
-      status: "generating",
-      imageUrl: null,
-      aspectRatio: s.aspectRatio ?? "16:9",
-    }));
-    setScenes(seeded);
+  const fireGenerate = useCallback(
+    async (payload: PendingStoryboard, replaceState: boolean) => {
+      setError(null);
+      setIsGenerating(true);
+      setProjectId(payload.videoProjectId);
+      setModel(payload.model);
+
+      // Seed local state so the strip renders skeletons while the API runs
+      const seeded: StoryboardScene[] = payload.scenes.map((s) => ({
+        sceneIndex: s.sceneIndex,
+        prompt: s.prompt,
+        status: "generating",
+        imageUrl: null,
+        aspectRatio: s.aspectRatio ?? "16:9",
+      }));
+      if (replaceState) setScenes(seeded);
+
+      try {
+        const result: StoryboardResponse = await generateStoryboard({
+          videoProjectId: payload.videoProjectId,
+          model: payload.model,
+          scenes: payload.scenes.map((s) => ({
+            sceneIndex: s.sceneIndex,
+            prompt: s.prompt,
+            aspectRatio: s.aspectRatio ?? "16:9",
+            referenceImages: s.referenceImages,
+          })),
+        });
+
+        setScenes((current) =>
+          current.map((s) => {
+            const r = result.scenes.find((x) => x.sceneIndex === s.sceneIndex);
+            if (!r) return s;
+            return {
+              ...s,
+              status:
+                r.status === "ready"
+                  ? "ready"
+                  : r.status === "failed"
+                    ? "failed"
+                    : "generating",
+              imageUrl: r.imageUrl,
+              error: r.error,
+            };
+          }),
+        );
+
+        if (result.modelRequested !== result.model) {
+          setError(
+            `Requested ${result.modelRequested} but server fell back to ${result.model} — verify OPENAI_API_KEY on the server.`,
+          );
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Storyboard generation failed");
+        setScenes((current) =>
+          current.map((s) => ({ ...s, status: "failed", error: "Request failed" })),
+        );
+      } finally {
+        setIsGenerating(false);
+      }
+    },
+    [],
+  );
+
+  // ─── Auto-load on mount from localStorage ──────────────────────────
+
+  useEffect(() => {
+    if (hasMountedRef.current) return;
+    hasMountedRef.current = true;
+    if (typeof window === "undefined") return;
+
+    const raw = localStorage.getItem(PENDING_KEY);
+    if (!raw) return;
 
     try {
-      const result: StoryboardResponse = await generateStoryboard({
-        videoProjectId: projectId,
-        model,
-        scenes: DEMO_SCENES.map((s, i) => ({
-          sceneIndex: i,
-          prompt: s.prompt,
-          aspectRatio: s.aspectRatio ?? "16:9",
-        })),
-      });
-
-      // Merge results back into scene state
-      setScenes((current) =>
-        current.map((s) => {
-          const r = result.scenes.find((x) => x.sceneIndex === s.sceneIndex);
-          if (!r) return s;
-          return {
-            ...s,
-            status:
-              r.status === "ready"
-                ? "ready"
-                : r.status === "failed"
-                  ? "failed"
-                  : "generating",
-            imageUrl: r.imageUrl,
-            error: r.error,
-          };
-        }),
-      );
-
-      if (result.modelRequested !== result.model) {
-        setError(
-          `Requested ${result.modelRequested} but server fell back to ${result.model} — check OPENAI_API_KEY on the server.`,
-        );
+      const payload = JSON.parse(raw) as PendingStoryboard;
+      if (!payload || !Array.isArray(payload.scenes) || payload.scenes.length === 0) {
+        return;
       }
+      // WHY: Clear the pending payload immediately so a refresh doesn't refire.
+      // The local React state holds the live results from here on.
+      localStorage.removeItem(PENDING_KEY);
+      void fireGenerate(payload, true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Storyboard generation failed");
-      setScenes((current) =>
-        current.map((s) => ({
-          ...s,
-          status: "failed",
-          error: "Request failed",
-        })),
-      );
-    } finally {
-      setIsGenerating(false);
+      console.warn("[Storyboard] Failed to parse pending payload:", e);
+      localStorage.removeItem(PENDING_KEY);
     }
-  }, [model, projectId]);
+  }, [fireGenerate]);
+
+  // ─── Per-scene handlers ─────────────────────────────────────────────
 
   const handleApprove = useCallback((sceneIndex: number) => {
     setScenes((current) =>
@@ -133,7 +159,7 @@ export default function StoryboardPage() {
   const handleRegenerate = useCallback(
     async (sceneIndex: number) => {
       const scene = scenes.find((s) => s.sceneIndex === sceneIndex);
-      if (!scene) return;
+      if (!scene || !projectId) return;
 
       setScenes((current) =>
         current.map((s) =>
@@ -185,11 +211,17 @@ export default function StoryboardPage() {
     [scenes, model, projectId],
   );
 
+  const handleRemove = useCallback((sceneIndex: number) => {
+    setScenes((current) => current.filter((s) => s.sceneIndex !== sceneIndex));
+  }, []);
+
   const handleAllApproved = useCallback(() => {
-    // WHY: When all keyframes are approved, ship them to the Video Editor
-    // for Seedance i2v generation. The approved imageUrls become firstFrameUrl
-    // on each scene's video generation call. Wired through localStorage so
-    // the editor picks them up on mount — same pattern as Assets → Editor.
+    // WHY: Hand the approved keyframes back to the chat-driven Workspace.
+    // ChatPanel reads pm-storyboard-approved on mount and surfaces them to
+    // the strategist so the next CREATE_VIDEO emission can carry firstFrameUrl
+    // per scene (i2v mode). Then redirect the user back to chat — they never
+    // navigate the dashboard manually.
+    if (typeof window === "undefined") return;
     const approved = scenes
       .filter((s) => s.status === "approved" && s.imageUrl)
       .map((s) => ({
@@ -200,84 +232,59 @@ export default function StoryboardPage() {
       }));
     if (approved.length === 0) return;
     localStorage.setItem(
-      "pm-storyboard-import",
+      APPROVED_KEY,
       JSON.stringify({
-        projectId,
+        videoProjectId: projectId,
         scenes: approved,
-        importedAt: new Date().toISOString(),
+        approvedAt: new Date().toISOString(),
       }),
     );
-    window.location.href = "/dashboard/video/new";
+    window.location.href = "/dashboard";
   }, [scenes, projectId]);
+
+  // ─── Render ────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-void px-6 py-8">
       <div className="mx-auto max-w-6xl">
-        {/* Header */}
         <header className="mb-6">
           <div className="flex items-center gap-3 mb-2">
             <Sparkles size={24} className="text-royal" strokeWidth={1.5} />
             <h1 className="text-2xl font-bold text-cloud">Storyboard</h1>
+            {projectId && (
+              <span className="text-xs text-ash font-mono">
+                {projectId.slice(0, 8)}…
+              </span>
+            )}
           </div>
           <p className="text-sm text-ash max-w-2xl">
-            Cheap-keyframe approval gate. Generate scene thumbnails before
-            burning Seedance video credits. Approved keyframes become the first
-            frame of the downstream video generation. Send the strip to a
-            client for sign-off, then ship.
+            Cheap-keyframe approval gate. Approved frames flow back to the
+            strategist as <code className="text-cloud bg-slate px-1 rounded">firstFrameUrl</code> on
+            each scene before video generation runs.
           </p>
         </header>
 
-        {/* Controls */}
-        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-smoke bg-graphite/40 p-4">
-          <label className="flex items-center gap-2 text-sm text-ash">
-            <span>Model:</span>
-            <select
-              value={model}
-              onChange={(e) =>
-                setModel(e.target.value as "nano-banana-pro" | "gpt-image-2")
-              }
-              disabled={isGenerating}
-              className="
-                rounded-md bg-slate border border-smoke
-                px-2 py-1 text-sm text-cloud
-                focus:outline-none focus:border-royal
-                disabled:opacity-50 cursor-pointer
-              "
-            >
-              <option value="nano-banana-pro">Nano Banana Pro</option>
-              <option value="gpt-image-2">GPT Image 2</option>
-            </select>
-          </label>
-
-          <button
-            onClick={handleGenerate}
-            disabled={isGenerating}
-            className="
-              flex items-center gap-2 rounded-lg bg-royal px-4 py-2
-              text-sm font-medium text-white
-              hover:bg-royal/90 disabled:opacity-60 disabled:cursor-not-allowed
-              transition-colors duration-[var(--transition-micro)]
-              cursor-pointer
-            "
-          >
-            {isGenerating ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Sparkles size={14} strokeWidth={2} />
-            )}
-            {scenes.length > 0 ? "Regenerate all" : "Generate sample storyboard"}
-          </button>
-
-          {scenes.length > 0 && (
+        {/* Status row (when we have scenes) */}
+        {scenes.length > 0 && (
+          <div className="mb-6 flex items-center justify-between rounded-xl border border-smoke bg-graphite/40 px-4 py-3">
             <span className="text-xs text-ash">
+              Model: <code className="text-cloud">{model}</code> ·{" "}
               {scenes.filter((s) => s.status === "ready" || s.status === "approved").length}
               {" / "}
-              {scenes.length} ready
+              {scenes.length} ready ·{" "}
+              {scenes.filter((s) => s.status === "approved").length}
+              {" / "}
+              {scenes.length} approved
             </span>
-          )}
-        </div>
+            {isGenerating && (
+              <span className="flex items-center gap-2 text-xs text-royal">
+                <Loader2 size={12} className="animate-spin" />
+                generating…
+              </span>
+            )}
+          </div>
+        )}
 
-        {/* Error */}
         {error && (
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-300">
             <AlertCircle size={14} strokeWidth={1.5} className="mt-0.5 shrink-0" />
@@ -285,54 +292,45 @@ export default function StoryboardPage() {
           </div>
         )}
 
-        {/* Strip */}
         <StoryboardStrip
           scenes={scenes}
           videoProjectId={projectId}
           onApprove={handleApprove}
           onUnapprove={handleUnapprove}
           onRegenerate={handleRegenerate}
+          onRemove={handleRemove}
           onAllApproved={handleAllApproved}
           isGenerating={isGenerating}
         />
 
-        {/* Empty state guidance */}
+        {/* Empty state — directs user back to chat */}
         {scenes.length === 0 && !isGenerating && (
-          <div className="mt-8 rounded-xl border border-smoke/50 bg-graphite/20 p-6 text-sm text-ash">
-            <p className="mb-3 text-cloud font-medium">
-              How this fits into the production SOP
-            </p>
-            <ol className="list-decimal pl-5 space-y-1.5">
-              <li>
-                <strong className="text-cloud">Workspace</strong> — brief the
-                strategist on what you want to make
-              </li>
-              <li>
-                <strong className="text-royal">Storyboard</strong> ← you are here
-                — generate cheap keyframes, approve or regenerate
-              </li>
-              <li>
-                <strong className="text-cloud">Video Editor</strong> — approved
-                keyframes feed Seedance i2v generation
-              </li>
-              <li>
-                <strong className="text-cloud">Assets</strong> — reference
-                library managed alongside scenes
-              </li>
-              <li>
-                <strong className="text-cloud">Calendar / Campaigns</strong> —
-                schedule and publish
-              </li>
-              <li>
-                <strong className="text-cloud">Analytics</strong> — measure
-                what worked
-              </li>
-            </ol>
-            <p className="mt-4 flex items-center gap-1 text-xs text-ash">
-              Click <strong className="text-cloud mx-1">Generate sample storyboard</strong>
-              to see the flow with demo scenes
-              <ArrowRight size={12} strokeWidth={1.5} />
-            </p>
+          <div className="mt-8 rounded-xl border border-smoke/50 bg-graphite/20 p-6">
+            <div className="flex items-start gap-3">
+              <MessageSquare size={18} className="text-royal mt-0.5 shrink-0" strokeWidth={1.5} />
+              <div className="text-sm text-ash">
+                <p className="text-cloud font-medium mb-2">
+                  Nothing pending
+                </p>
+                <p className="mb-3">
+                  This view is chat-driven. To get a storyboard, head back to
+                  the Workspace and brief the strategist on the video you want.
+                  When it&apos;s ready to plan visuals, it&apos;ll send you here
+                  with keyframes to approve.
+                </p>
+                <a
+                  href="/dashboard"
+                  className="
+                    inline-flex items-center gap-1.5 rounded-lg bg-royal px-3 py-1.5
+                    text-xs font-medium text-white hover:bg-royal/90
+                    transition-colors duration-[var(--transition-micro)]
+                  "
+                >
+                  <MessageSquare size={12} strokeWidth={2} />
+                  Back to Workspace
+                </a>
+              </div>
+            </div>
           </div>
         )}
       </div>

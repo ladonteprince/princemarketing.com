@@ -9,6 +9,7 @@ import {
   Image as ImageIcon,
   ArrowRight,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 
 // WHY: Storyboard strip sits between scene-write and video-generate. User reviews
@@ -33,6 +34,7 @@ type StoryboardStripProps = {
   onApprove: (sceneIndex: number) => void;
   onUnapprove: (sceneIndex: number) => void;
   onRegenerate: (sceneIndex: number) => void;
+  onRemove: (sceneIndex: number) => void;
   onAllApproved: () => void;
   // WHY: Disabled while parent is firing the API call so the user can't double-tap
   isGenerating?: boolean;
@@ -51,6 +53,7 @@ export function StoryboardStrip({
   onApprove,
   onUnapprove,
   onRegenerate,
+  onRemove,
   onAllApproved,
   isGenerating = false,
   className = "",
@@ -116,6 +119,7 @@ export function StoryboardStrip({
             onApprove={() => onApprove(scene.sceneIndex)}
             onUnapprove={() => onUnapprove(scene.sceneIndex)}
             onRegenerate={() => onRegenerate(scene.sceneIndex)}
+            onRemove={() => onRemove(scene.sceneIndex)}
             disabled={isGenerating}
           />
         ))}
@@ -139,12 +143,14 @@ function SceneFrame({
   onApprove,
   onUnapprove,
   onRegenerate,
+  onRemove,
   disabled,
 }: {
   scene: StoryboardScene;
   onApprove: () => void;
   onUnapprove: () => void;
   onRegenerate: () => void;
+  onRemove: () => void;
   disabled: boolean;
 }) {
   const [showFullPrompt, setShowFullPrompt] = useState(false);
@@ -239,6 +245,24 @@ function SceneFrame({
         >
           <RefreshCw size={10} strokeWidth={1.5} />
           Redo
+        </button>
+
+        <div className="w-px bg-smoke" />
+
+        <button
+          onClick={onRemove}
+          disabled={disabled}
+          className="
+            flex flex-1 items-center justify-center gap-1 py-1.5
+            text-[10px] font-medium text-ash
+            hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50
+            transition-colors duration-[var(--transition-micro)]
+            cursor-pointer disabled:cursor-not-allowed
+          "
+          aria-label={`Remove scene ${scene.sceneIndex + 1}`}
+        >
+          <Trash2 size={10} strokeWidth={1.5} />
+          Remove
         </button>
 
         <div className="w-px bg-smoke" />

@@ -282,6 +282,54 @@ async function executeAction(
       }
     }
 
+    case "GENERATE_STORYBOARD": {
+      // WHY: Cheap-keyframe approval gate before expensive Seedance video gen.
+      // Hands off to /dashboard/storyboard where the user reviews each keyframe
+      // and can approve / regenerate / remove. Approved frames flow back to
+      // CREATE_VIDEO as firstFrameUrl on next round. Persist payload via
+      // localStorage so the storyboard page picks it up on mount.
+      try {
+        const scenes = (action as { scenes?: unknown }).scenes;
+        const videoProjectIdRaw = (action as { videoProjectId?: unknown }).videoProjectId;
+        const model = (action as { model?: unknown }).model;
+
+        if (!Array.isArray(scenes) || scenes.length === 0) {
+          return { success: false, detail: "GENERATE_STORYBOARD missing scenes array" };
+        }
+
+        const resolvedProjectId =
+          typeof videoProjectIdRaw === "string" &&
+          videoProjectIdRaw !== "auto" &&
+          videoProjectIdRaw !== "current" &&
+          videoProjectIdRaw !== "latest"
+            ? videoProjectIdRaw
+            : crypto.randomUUID();
+
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            "pm-storyboard-pending",
+            JSON.stringify({
+              videoProjectId: resolvedProjectId,
+              model: typeof model === "string" ? model : "nano-banana-pro",
+              scenes,
+              requestedAt: new Date().toISOString(),
+            }),
+          );
+          window.location.href = "/dashboard/storyboard";
+        }
+
+        return {
+          success: true,
+          detail: `Storyboard for ${scenes.length} scene${scenes.length === 1 ? "" : "s"} queued — review in Storyboard tab`,
+        };
+      } catch (err) {
+        return {
+          success: false,
+          detail: err instanceof Error ? err.message : "Failed to launch storyboard",
+        };
+      }
+    }
+
     case "CREATE_VIDEO": {
       try {
         const id = crypto.randomUUID();
