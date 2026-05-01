@@ -1404,11 +1404,24 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
   // Keep last 50 to prevent bloat. Skip the initial-greeting-only state
   // so we don't waste localStorage on empty conversations.
   const chatStorageKey = `${CHAT_STORAGE_KEY_PREFIX}${activeProjectId}`;
+  // WHY: Track which project the current `messages` array actually belongs to.
+  // This prevents the project-switch race: when activeProjectId changes,
+  // chatStorageKey recomputes BEFORE the load effect runs, and a naive save
+  // would write the OLD project's messages to the NEW project's key — wiping
+  // the new project's saved history. The owner ref lets us skip saves during
+  // the transitional moment until the load effect repopulates messages.
+  const messagesOwnerProjectRef = useRef(activeProjectId);
   useEffect(() => {
+    // Only save when the messages we have actually belong to the active project
+    if (messagesOwnerProjectRef.current !== activeProjectId) return;
     if (messages.length > 1) {
       localStorage.setItem(chatStorageKey, JSON.stringify(messages.slice(-50)));
     }
-  }, [messages, chatStorageKey]);
+    // WHY: Intentionally NOT depending on chatStorageKey — that dep was the
+    // bug. We only want to save when MESSAGES change, never when the key
+    // computation flips due to a project switch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, activeProjectId]);
 
   // WHY: When the user switches projects, load that project's chat history
   // (or the initial greeting if it's brand new). Without this the chat from
@@ -1420,13 +1433,22 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
     if (prevProjectIdRef.current === activeProjectId) return;
     prevProjectIdRef.current = activeProjectId;
     const saved = localStorage.getItem(`${CHAT_STORAGE_KEY_PREFIX}${activeProjectId}`);
+    let next: typeof messages;
     if (saved) {
       try {
-        setMessages(JSON.parse(saved));
-        return;
-      } catch { /* fall through to initial */ }
+        next = JSON.parse(saved);
+      } catch {
+        next = [INITIAL_MESSAGE];
+      }
+    } else {
+      next = [INITIAL_MESSAGE];
     }
-    setMessages([INITIAL_MESSAGE]);
+    // WHY: Update the owner ref to mark the upcoming `messages` state as
+    // belonging to the new project. The save effect uses this ref to gate
+    // writes — so the next save won't fire until messages match the new
+    // project, which prevents the cross-project overwrite.
+    messagesOwnerProjectRef.current = activeProjectId;
+    setMessages(next);
   }, [activeProjectId]);
 
   const handleClearChat = useCallback(() => {
