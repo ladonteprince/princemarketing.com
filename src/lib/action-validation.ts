@@ -234,6 +234,46 @@ const SaveMemoryAction = z.object({
   content: z.string().max(2000),
 });
 
+// --- Finishing Engineer (DaVinci Resolve, local) ---
+// WHY: After Sound Engineer locks the score, hand off to a Mac-local DaVinci
+// agent for assembly + color grade + multi-format render. The agent polls
+// /api/finish/davinci/poll, claims the job, drives Resolve via its Python API,
+// and reports completion. Resolve runs ON the user's Mac — this is a local-only
+// finishing layer (chat → queue → local agent → finished cuts → GCS).
+const FinishInDavinciAction = z.object({
+  action: z.literal("FINISH_IN_DAVINCI"),
+  videoProjectId: VideoProjectIdSchema,
+  scenes: z
+    .array(
+      z.object({
+        sceneIndex: z.number().int().min(0).max(50),
+        videoUrl: z.string().url(),
+        durationSec: z.number().min(1).max(120),
+      }),
+    )
+    .min(1)
+    .max(20),
+  scoreUrl: z.string().url().optional(),
+  voiceoverUrl: z.string().url().optional(),
+  targetFormats: z
+    .array(
+      z.enum([
+        "tiktok-9x16",
+        "reels-9x16",
+        "youtube-shorts-9x16",
+        "youtube-16x9",
+        "feed-1x1",
+        "feed-4x5",
+        "twitter-16x9",
+        "brand-film-16x9",
+      ]),
+    )
+    .min(1)
+    .max(8),
+  brandLut: z.string().max(200).optional(),
+  projectName: z.string().min(1).max(200).optional(),
+});
+
 // --- Storyboard-First Action: GENERATE_STORYBOARD ---
 // WHY: Before firing expensive Seedance i2v calls (~$1/scene × 6 scenes), the AI
 // generates cheap keyframes (~$0.04 each) so the user can approve the visual
@@ -381,6 +421,7 @@ export const ActionBlockSchema = z.discriminatedUnion("action", [
   DeleteMemoryAction,
   CreateScoreAction,
   GenerateStoryboardAction,
+  FinishInDavinciAction,
   QueryProductionBrainAction,
   OfferVoiceoverAction,
   GenerateVoiceoverAction,

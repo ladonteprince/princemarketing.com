@@ -138,6 +138,7 @@ model User {
   inspirations    Inspiration[]
   tracks          Track[]
   highlights      HighlightCollection[]
+  finishingJobs   FinishingJob[]
 
   @@map("users")
 }
@@ -538,4 +539,42 @@ model Inspiration {
 
   @@index([userId])
   @@map("inspirations")
+}
+
+// WHY: Finishing jobs queued for the local DaVinci agent. The strategist
+// emits FINISH_IN_DAVINCI after the Sound Engineer locks the score; the
+// ChatPanel handler creates a row here; the user's Mac-local Python agent
+// polls /api/finish/davinci/poll, claims the job, drives DaVinci Resolve
+// via its Python API to assemble + grade + render multi-format outputs,
+// and reports completion via /api/finish/davinci/update.
+enum FinishingJobStatus {
+  QUEUED
+  IN_PROGRESS
+  COMPLETE
+  FAILED
+}
+
+model FinishingJob {
+  id          String             @id @default(cuid())
+  userId      String
+  projectId   String?
+  status      FinishingJobStatus @default(QUEUED)
+  // Spec is the full job payload: scene URLs, audio URL, target formats,
+  // brand LUT id, duration, project name. Shape evolves so JSON is fine.
+  spec        Json
+  // Result is the array of rendered output URLs (one per format) + any
+  // metadata the agent wants to surface back. Populated on completion.
+  result      Json?
+  error       String?
+  agentVersion String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([status, createdAt])
+  @@map("finishing_jobs")
 }

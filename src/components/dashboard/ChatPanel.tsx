@@ -282,6 +282,57 @@ async function executeAction(
       }
     }
 
+    case "FINISH_IN_DAVINCI": {
+      // WHY: Strategist hands off to the Finishing Engineer (local DaVinci
+      // agent). We POST the job spec to /api/finish/davinci/queue which
+      // creates a finishing_jobs row. The user's Mac-local Python agent
+      // polls /api/finish/davinci/poll, claims the job, drives Resolve via
+      // its Python API to assemble + grade + render multi-format outputs,
+      // then reports back via /update.
+      try {
+        const a = action as Record<string, unknown>;
+        const res = await fetch("/api/finish/davinci/queue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            videoProjectId:
+              typeof a.videoProjectId === "string" &&
+              a.videoProjectId !== "auto" &&
+              a.videoProjectId !== "current" &&
+              a.videoProjectId !== "latest"
+                ? a.videoProjectId
+                : undefined,
+            projectName: typeof a.projectName === "string" ? a.projectName : undefined,
+            scenes: a.scenes,
+            scoreUrl: typeof a.scoreUrl === "string" ? a.scoreUrl : undefined,
+            voiceoverUrl: typeof a.voiceoverUrl === "string" ? a.voiceoverUrl : undefined,
+            targetFormats: a.targetFormats,
+            brandLut: typeof a.brandLut === "string" ? a.brandLut : undefined,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          return {
+            success: false,
+            detail:
+              typeof data.error === "string"
+                ? data.error
+                : "Failed to queue finishing job",
+          };
+        }
+        const formats = Array.isArray(a.targetFormats) ? a.targetFormats.length : 0;
+        return {
+          success: true,
+          detail: `Finishing job queued (${formats} formats). Make sure DaVinci Resolve and the local agent are running on your Mac.`,
+        };
+      } catch (err) {
+        return {
+          success: false,
+          detail: err instanceof Error ? err.message : "Finishing handoff failed",
+        };
+      }
+    }
+
     case "GENERATE_STORYBOARD": {
       // WHY: Cheap-keyframe approval gate before expensive Seedance video gen.
       // Hands off to /dashboard/storyboard where the user reviews each keyframe
