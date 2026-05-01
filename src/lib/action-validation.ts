@@ -234,6 +234,37 @@ const SaveMemoryAction = z.object({
   content: z.string().max(2000),
 });
 
+// --- Storyboard-First Action: GENERATE_STORYBOARD ---
+// WHY: Before firing expensive Seedance i2v calls (~$1/scene × 6 scenes), the AI
+// generates cheap keyframes (~$0.04 each) so the user can approve the visual
+// direction. Approved keyframes become firstFrameUrl on the downstream video,
+// locking the look before money gets spent. Also enables client approval
+// workflows for the agency play — send a brand a 6-frame storyboard, get
+// sign-off, then generate. Industry-standard production order.
+const GenerateStoryboardAction = z.object({
+  action: z.literal("GENERATE_STORYBOARD"),
+  videoProjectId: VideoProjectIdSchema,
+  // WHY: Default to nano-banana-pro because it's wired today via the .ai backend
+  // and supports multi-image refs. gpt-image-2 unlocks once OPENAI_API_KEY is
+  // added — the schema is forward-compatible.
+  model: z
+    .enum(["nano-banana-pro", "gpt-image-2"])
+    .optional(),
+  scenes: z
+    .array(
+      z.object({
+        sceneIndex: z.number().int().min(0).max(50),
+        prompt: z.string().min(5).max(2000),
+        aspectRatio: z.enum(["16:9", "9:16", "1:1"]).optional(),
+        // WHY: Carries character/prop/environment locks already established for
+        // the project so storyboard frames stay visually consistent across episodes.
+        referenceImages: z.array(z.string().url()).max(10).optional(),
+      }),
+    )
+    .min(1)
+    .max(10),
+});
+
 // --- Score-First Action: CREATE_SCORE ---
 // WHY: Score-first production order. BEFORE any Seedance calls, the AI emits
 // CREATE_SCORE with 3 track options (different genres/tempos matching the
@@ -349,6 +380,7 @@ export const ActionBlockSchema = z.discriminatedUnion("action", [
   SaveMemoryAction,
   DeleteMemoryAction,
   CreateScoreAction,
+  GenerateStoryboardAction,
   QueryProductionBrainAction,
   OfferVoiceoverAction,
   GenerateVoiceoverAction,
