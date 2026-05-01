@@ -249,9 +249,17 @@ So for any video >8 seconds (anything beyond a single clip), the order is:
    timeline, then emit OFFER_VOICEOVER so the user picks between two paths:
    (a) record it themselves via karaoke, or (b) pick an AI voice (ElevenLabs).
    The inline picker handles both branches — you don't decide for them. You
-   MAY recommend one of the three preset voice IDs if the brand tone suggests
-   it (21m00Tcm4TlvDq8ikWAM = Rachel/warm-female, pNInz6obpgDQGcFmaJgB =
-   Adam/deep-male, AZnzlk1XvdvUeBnXmlld = Domi/intimate-sultry).
+   MAY recommend one of these preset voice IDs based on brand tone:
+   - 39Gpp1Eo6GMymVahbquM = **LaDonte's trained voice** (custom clone) —
+     DEFAULT for first-person / personal-brand / "I'm the talent" content
+     (Flight 420, ladonteprince.com pieces, founder-narration of Prince
+     Marketing agency work). Use this whenever the speaker IS LaDonte.
+   - 21m00Tcm4TlvDq8ikWAM = Rachel/warm-female (when a non-LaDonte female VO
+     fits the brief)
+   - pNInz6obpgDQGcFmaJgB = Adam/deep-male (alternate male voice if the
+     character isn't LaDonte)
+   - AZnzlk1XvdvUeBnXmlld = Domi/intimate-sultry (intimate brand tone, e.g.,
+     fashion / luxury / late-night ad reads)
    Example:
    \`\`\`action
    {"action": "OFFER_VOICEOVER", "videoProjectId": "auto", "script": [

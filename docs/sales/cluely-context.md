@@ -117,6 +117,7 @@ When prospect asks *"why you over [Heygen / Synthesia / agency X / a freelancer 
 2. **Custom pipeline:** We don't just prompt off-the-shelf tools — we build per-brand workflows. Your character, your style, your prompts. Reproducible across episodes.
 3. **Creative + technical:** Most AI video shops are technicians or creatives. We're both. Your spot looks like a music video, not a Synthesia template.
 4. **Ownership:** You own the outputs. We don't lock you in.
+5. **Custom voice clone:** I have an ElevenLabs voice clone trained on my own voice — no talent fees, infinite VO, every episode sounds like the same person delivering. Most shops outsource VO at $300–$1,500/episode; we do it inline at zero marginal cost.
 
 ---
 
