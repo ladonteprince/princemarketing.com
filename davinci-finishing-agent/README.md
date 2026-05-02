@@ -1,9 +1,14 @@
-# DaVinci Finishing Agent
+# DaVinci Finishing Agent + `dvr` CLI
 
-Local Python agent that runs on your Mac. Polls the production app for
-finishing jobs, drives DaVinci Resolve via its Python Scripting API to
-assemble + grade + render multi-format outputs, and uploads the finished
-cuts back to GCS.
+Two ways to drive Resolve from this directory:
+
+1. **`finishing-agent`** — daemon that polls the production app for jobs,
+   runs them through Resolve, uploads results to GCS. The chat-driven flow.
+2. **`dvr` CLI** — one-shot commands for manual operation. Render an
+   existing project, list projects, replay a job spec offline, etc.
+
+Both share the same engine (`davinci_driver.py`), so what works in one
+works in the other.
 
 ## What it does
 
@@ -84,13 +89,31 @@ echo "FINISHING_AGENT_TOKEN=<same-value-as-local>" >> /var/www/princemarketing.c
 pm2 restart princemarketing-com
 ```
 
-### 5. Run
+### 5. Install the CLI + agent as console commands
 
-Make sure DaVinci Resolve is running, then:
+From this directory, with your venv active:
 
 ```bash
-source .venv/bin/activate
-python agent.py
+pip install -e .
+```
+
+That gives you two commands in your venv:
+
+- `dvr` — the CLI wrapper
+- `finishing-agent` — the daemon
+
+### 6. Run
+
+Make sure DaVinci Resolve is running, then either:
+
+```bash
+# A) Run the polling agent (chat-driven flow)
+finishing-agent
+
+# B) One-shot CLI commands (manual flow)
+dvr status
+dvr projects
+dvr presets
 ```
 
 You should see:
@@ -102,6 +125,59 @@ You should see:
 
 Leave it running while you produce. When the strategist emits
 `FINISH_IN_DAVINCI`, the agent picks the job up within 30s.
+
+## `dvr` CLI reference
+
+```
+dvr status                              # Check Resolve connection + config
+dvr projects                            # List all Resolve projects
+dvr presets                             # List supported render presets
+
+dvr open NAME [--create]                # Open a project (or create if missing)
+
+dvr render --formats KEYS [--project NAME] [--out DIR]
+   # Queue and run renders for the current (or named) project.
+   # KEYS: comma-separated preset keys, e.g. "tiktok-9x16,youtube-16x9"
+
+dvr finish SPEC.json [--out DIR]
+   # Replay a finishing job from a JSON spec (offline / debug flow).
+   # Spec matches the polling-agent payload exactly.
+```
+
+### Quick examples
+
+```bash
+# 1. Health check (do this first, every session)
+dvr status
+
+# 2. Open the project that was created by the polling agent or in chat
+dvr open "Flight 420 — Episode 03"
+
+# 3. Render the current timeline to TikTok + YouTube formats
+dvr render --formats tiktok-9x16,youtube-16x9 --out ~/Desktop/episode-03
+
+# 4. Replay a job spec saved from the chat flow (great for debugging)
+dvr finish ~/Desktop/job-spec.json --out ~/Desktop/episode-03-out
+```
+
+### Spec format for `dvr finish`
+
+```json
+{
+  "projectName": "Flight 420 — Episode 03",
+  "scenes": [
+    {"sceneIndex": 0, "videoUrl": "file:///Users/black/clips/scene0.mp4", "durationSec": 5},
+    {"sceneIndex": 1, "videoUrl": "file:///Users/black/clips/scene1.mp4", "durationSec": 5}
+  ],
+  "scoreUrl": "file:///Users/black/audio/score.mp3",
+  "voiceoverUrl": "file:///Users/black/audio/vo.mp3",
+  "targetFormats": ["tiktok-9x16", "youtube-16x9"],
+  "brandLut": "flight420.cube"
+}
+```
+
+URLs accept `file://`, `http://`, or `https://` (the latter two get
+downloaded to `--out` first).
 
 ## Output formats
 

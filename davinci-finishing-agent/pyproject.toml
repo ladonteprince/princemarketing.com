@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "davinci-finishing-agent"
+version = "0.1.0"
+description = "Local CLI + polling agent for DaVinci Resolve automation"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+    "google-cloud-storage>=2.10.0",
+]
+
+[project.scripts]
+# WHY: Installs `dvr` and `finishing-agent` as console commands when the
+# user runs `pip install -e .` in their venv.
+dvr = "cli:main"
+finishing-agent = "agent:main"
+
+[tool.setuptools]
+py-modules = ["agent", "cli", "config", "davinci_driver", "gcs_upload"]
