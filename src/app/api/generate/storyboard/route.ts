@@ -23,10 +23,15 @@ const sceneSchema = z.object({
 
 const requestSchema = z.object({
   videoProjectId: z.string().optional(),
-  // WHY: Default to nano-banana-pro because it's wired today via the .ai backend
-  // and supports multi-image refs. gpt-image-2 will activate once OPENAI_API_KEY
-  // is added — the route is forward-compatible.
-  model: z.enum(["nano-banana-pro", "gpt-image-2"]).default("nano-banana-pro"),
+  // WHY: nano-banana-pro-preview (Gemini direct) is the storyboard default —
+  // it accepts multi-image refs (character lock for series consistency) and
+  // produces photorealistic keyframes in 9:16. The legacy "nano-banana-pro"
+  // alias still routes to the .ai-proxy path for backwards compatibility,
+  // and "gpt-image-2" routes to OpenAI direct (no ref support; reserve for
+  // text-in-image / hero ad creative where OpenAI is stronger).
+  model: z
+    .enum(["nano-banana-pro-preview", "nano-banana-pro", "gpt-image-2"])
+    .default("nano-banana-pro-preview"),
   scenes: z.array(sceneSchema).min(1).max(10),
 });
 
@@ -229,17 +234,152 @@ async function generateViaPrinceAi(
   }
 }
 
-// WHY: Branch by model — gpt-image-2 hits OpenAI direct (using the key in
-// our .env), nano-banana-pro proxies through the .ai backend that already
-// owns Gemini credentials and handles the async generationId envelope.
+// WHY: Branch by model:
+//   nano-banana-pro-preview → Gemini direct, multi-ref character lock (default)
+//   nano-banana-pro         → legacy .ai-proxy path (backwards compat)
+//   gpt-image-2             → OpenAI direct, text-only, hero/ad creative
 async function generateOneKeyframe(
   scene: z.infer<typeof sceneSchema>,
-  model: "nano-banana-pro" | "gpt-image-2",
+  model: "nano-banana-pro-preview" | "nano-banana-pro" | "gpt-image-2",
 ): Promise<StoryboardSceneResult> {
   if (model === "gpt-image-2") {
     return generateViaOpenAI(scene);
   }
+  if (model === "nano-banana-pro-preview") {
+    return generateViaGeminiDirect(scene);
+  }
   return generateViaPrinceAi(scene, model);
+}
+
+// WHY: Direct Gemini call to nano-banana-pro-preview. Accepts multi-image
+// refs from scene.referenceImages — the character lock anchors. Without
+// refs, falls back to text-prompt-only behavior (fine but less consistent
+// across a series). This is what produced the v2 keyframes for the IG Story.
+async function generateViaGeminiDirect(
+  scene: z.infer<typeof sceneSchema>,
+): Promise<StoryboardSceneResult> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return {
+      sceneIndex: scene.sceneIndex,
+      status: "failed",
+      imageUrl: null,
+      generationId: null,
+      streamUrl: null,
+      error: "GEMINI_API_KEY not set on server",
+    };
+  }
+
+  const aspect = scene.aspectRatio ?? "16:9";
+  const prompt = buildKeyframePrompt(scene.prompt, aspect);
+
+  // WHY: Fetch each ref URL → base64. Capped at scene.referenceImages.max(10)
+  // by the schema. Failures on individual refs are non-fatal — we keep going
+  // with whatever we got, since text-only is a graceful fallback.
+  const refParts: Array<{ inline_data: { mime_type: string; data: string } }> = [];
+  for (const url of scene.referenceImages ?? []) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+      if (!r.ok) continue;
+      const buf = Buffer.from(await r.arrayBuffer());
+      const ct = r.headers.get("content-type") ?? "image/png";
+      refParts.push({
+        inline_data: { mime_type: ct, data: buf.toString("base64") },
+      });
+    } catch {
+      // skip this ref, continue
+    }
+  }
+
+  const body = {
+    contents: [
+      {
+        parts: [{ text: prompt }, ...refParts],
+      },
+    ],
+    generationConfig: {
+      responseModalities: ["IMAGE"],
+      temperature: 0.4,
+    },
+  };
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/nano-banana-pro-preview:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+    const result = (await res.json()) as {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{
+            inlineData?: { data?: string; mimeType?: string };
+            inline_data?: { data?: string; mime_type?: string };
+          }>;
+        };
+      }>;
+      error?: { message?: string };
+    };
+
+    if (!res.ok) {
+      return {
+        sceneIndex: scene.sceneIndex,
+        status: "failed",
+        imageUrl: null,
+        generationId: null,
+        streamUrl: null,
+        error: result?.error?.message ?? `Gemini returned ${res.status}`,
+      };
+    }
+
+    const parts = result.candidates?.[0]?.content?.parts ?? [];
+    let b64: string | null = null;
+    for (const p of parts) {
+      const inline = p.inlineData ?? p.inline_data;
+      if (inline?.data) {
+        b64 = inline.data;
+        break;
+      }
+    }
+    if (!b64) {
+      return {
+        sceneIndex: scene.sceneIndex,
+        status: "failed",
+        imageUrl: null,
+        generationId: null,
+        streamUrl: null,
+        error:
+          "Gemini returned no image part — TODO: pipe base64 through GCS upload to make a durable URL.",
+      };
+    }
+
+    // WHY: Same caveat as gpt-image-2 path — Gemini hands us base64, we'd
+    // need GCS upload to make a durable URL the rest of the pipeline can
+    // consume (Seedance i2v needs an URL, not bytes). v1 returns a data
+    // URL inline so the StoryboardStrip at least renders the thumbnail;
+    // future iteration: pipe through src/lib/storage/gcs.ts (already
+    // exists from the limerence work) and return the gs URL.
+    const dataUrl = `data:image/png;base64,${b64}`;
+    return {
+      sceneIndex: scene.sceneIndex,
+      status: "ready",
+      imageUrl: dataUrl,
+      generationId: null,
+      streamUrl: null,
+    };
+  } catch (err) {
+    return {
+      sceneIndex: scene.sceneIndex,
+      status: "failed",
+      imageUrl: null,
+      generationId: null,
+      streamUrl: null,
+      error: err instanceof Error ? err.message : "Gemini request failed",
+    };
+  }
 }
 
 export async function POST(request: Request) {

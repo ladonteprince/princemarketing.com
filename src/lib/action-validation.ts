@@ -288,7 +288,7 @@ const GenerateStoryboardAction = z.object({
   // and supports multi-image refs. gpt-image-2 unlocks once OPENAI_API_KEY is
   // added — the schema is forward-compatible.
   model: z
-    .enum(["nano-banana-pro", "gpt-image-2"])
+    .enum(["nano-banana-pro-preview", "nano-banana-pro", "gpt-image-2"])
     .optional(),
   scenes: z
     .array(

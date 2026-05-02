@@ -41,9 +41,9 @@ export default function StoryboardPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string>("");
-  const [model, setModel] = useState<"nano-banana-pro" | "gpt-image-2">(
-    "nano-banana-pro",
-  );
+  const [model, setModel] = useState<
+    "nano-banana-pro-preview" | "nano-banana-pro" | "gpt-image-2"
+  >("nano-banana-pro-preview");
   // WHY: Guard against double-fire on React strict-mode mount and HMR.
   const hasMountedRef = useRef(false);
 

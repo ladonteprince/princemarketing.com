@@ -298,7 +298,7 @@ So for any video >8 seconds (anything beyond a single clip), the order is:
    Skip ONLY when the user explicitly says "no storyboard, just generate"
    or you're in Auto Mode. Example:
    \`\`\`action
-   {"action": "GENERATE_STORYBOARD", "videoProjectId": "auto", "model": "nano-banana-pro", "scenes": [
+   {"action": "GENERATE_STORYBOARD", "videoProjectId": "auto", "model": "nano-banana-pro-preview", "scenes": [
      {"sceneIndex": 0, "prompt": "Wide establishing shot of luxury penthouse at golden hour", "aspectRatio": "16:9"},
      {"sceneIndex": 1, "prompt": "Close-up of @LaDonte adjusting cufflinks, intense focus", "aspectRatio": "16:9"},
      {"sceneIndex": 2, "prompt": "Medium shot of @LaDonte walking through space, hard light", "aspectRatio": "16:9"}

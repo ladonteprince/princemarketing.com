@@ -305,7 +305,7 @@ export type StoryboardRequest = {
     aspectRatio?: "16:9" | "9:16" | "1:1";
     referenceImages?: string[];
   }>;
-  model?: "nano-banana-pro" | "gpt-image-2";
+  model?: "nano-banana-pro-preview" | "nano-banana-pro" | "gpt-image-2";
 };
 
 export type StoryboardResponse = {
