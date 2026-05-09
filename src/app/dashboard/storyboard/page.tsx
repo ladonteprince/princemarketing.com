@@ -1,10 +1,17 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Sparkles, Loader2, AlertCircle, MessageSquare } from "lucide-react";
+import {
+  Sparkles,
+  Loader2,
+  AlertCircle,
+  MessageSquare,
+  Users,
+} from "lucide-react";
 import {
   StoryboardStrip,
   generateStoryboard,
+  generateStoryboardSheet,
   type StoryboardScene,
   type StoryboardResponse,
 } from "@/components/dashboard/StoryboardStrip";
@@ -36,6 +43,14 @@ type PendingStoryboard = {
 const PENDING_KEY = "pm-storyboard-pending";
 const APPROVED_KEY = "pm-storyboard-approved";
 
+type CastHandle = {
+  id: string;
+  handle: string | null;
+  category: "character" | "prop" | "environment";
+  label: string | null;
+  sheetImageUrl: string;
+};
+
 export default function StoryboardPage() {
   const [scenes, setScenes] = useState<StoryboardScene[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -43,9 +58,28 @@ export default function StoryboardPage() {
   const [projectId, setProjectId] = useState<string>("");
   const [model, setModel] = useState<
     "nano-banana-pro-preview" | "nano-banana-pro" | "gpt-image-2"
-  >("nano-banana-pro-preview");
+  >("gpt-image-2");
+  // WHY: Single composite-sheet image (one gpt-image-2 call drawing all panels
+  // in @aimikoda style). Coexists with per-panel imageUrls so users can ideate
+  // on the cheap sheet then iterate weak panels with per-panel Redo.
+  const [sheetImageUrl, setSheetImageUrl] = useState<string | null>(null);
+  const [sheetStatus, setSheetStatus] = useState<
+    "idle" | "generating" | "ready" | "failed"
+  >("idle");
+  const [sheetError, setSheetError] = useState<string | null>(null);
+  const [sheetStyle, setSheetStyle] = useState<"rough-pencil" | "photoreal">(
+    "rough-pencil",
+  );
+  // WHY: Cast/props/environments roster — fetched once on mount, displayed
+  // as a hint bar so the user knows which @handles resolve. Backend
+  // resolveCast() does the real substitution per request.
+  const [cast, setCast] = useState<CastHandle[]>([]);
   // WHY: Guard against double-fire on React strict-mode mount and HMR.
   const hasMountedRef = useRef(false);
+  // WHY: Dedupe in-flight regen requests by sceneIndex so a single click
+  // can't double-charge the OpenAI / .ai pipeline. Survives re-renders.
+  const inFlightRef = useRef<Set<number>>(new Set());
+  const sheetInFlightRef = useRef(false);
 
   // ─── Pipeline ──────────────────────────────────────────────────────
 
@@ -113,6 +147,17 @@ export default function StoryboardPage() {
     [],
   );
 
+  // ─── Cast hint bar — fetch once on mount ────────────────────────────
+
+  useEffect(() => {
+    void fetch("/api/cast")
+      .then(async (r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (j?.cast) setCast(j.cast as CastHandle[]);
+      })
+      .catch(() => {});
+  }, []);
+
   // ─── Auto-load on mount from localStorage ──────────────────────────
 
   useEffect(() => {
@@ -158,28 +203,34 @@ export default function StoryboardPage() {
 
   const handleRegenerate = useCallback(
     async (sceneIndex: number) => {
-      const scene = scenes.find((s) => s.sceneIndex === sceneIndex);
-      if (!scene || !projectId) return;
+      if (inFlightRef.current.has(sceneIndex)) return;
 
-      setScenes((current) =>
-        current.map((s) =>
+      // WHY: Read current scene + projectId via functional setScenes so a stale
+      // closure (Fast Refresh, double-render) can't capture old data. The
+      // outer projectId is still needed to gate the request.
+      let prompt = "";
+      let aspectRatio: "16:9" | "9:16" | "1:1" = "16:9";
+      let annotations: StoryboardScene["annotations"];
+      setScenes((current) => {
+        const scene = current.find((s) => s.sceneIndex === sceneIndex);
+        if (!scene) return current;
+        prompt = scene.prompt;
+        aspectRatio = scene.aspectRatio ?? "16:9";
+        annotations = scene.annotations;
+        return current.map((s) =>
           s.sceneIndex === sceneIndex
             ? { ...s, status: "generating", error: undefined, imageUrl: null }
             : s,
-        ),
-      );
+        );
+      });
+      if (!prompt || !projectId) return;
+      inFlightRef.current.add(sceneIndex);
 
       try {
         const result = await generateStoryboard({
           videoProjectId: projectId,
           model,
-          scenes: [
-            {
-              sceneIndex,
-              prompt: scene.prompt,
-              aspectRatio: scene.aspectRatio,
-            },
-          ],
+          scenes: [{ sceneIndex, prompt, aspectRatio, annotations }],
         });
         const r = result.scenes[0];
         setScenes((current) =>
@@ -206,14 +257,218 @@ export default function StoryboardPage() {
               : s,
           ),
         );
+      } finally {
+        inFlightRef.current.delete(sceneIndex);
       }
     },
-    [scenes, model, projectId],
+    [model, projectId],
   );
 
   const handleRemove = useCallback((sceneIndex: number) => {
     setScenes((current) => current.filter((s) => s.sceneIndex !== sceneIndex));
   }, []);
+
+  const handleAddScene = useCallback(() => {
+    setScenes((current) => {
+      const nextIndex =
+        current.length === 0
+          ? 0
+          : Math.max(...current.map((s) => s.sceneIndex)) + 1;
+      // WHY: New panels start empty — the user types a prompt and hits Redo to
+      // generate. Aspect ratio inherits from the most recent scene so the sheet
+      // stays visually consistent.
+      const aspectRatio = current[current.length - 1]?.aspectRatio ?? "16:9";
+      return [
+        ...current,
+        {
+          sceneIndex: nextIndex,
+          prompt: "",
+          status: "pending",
+          imageUrl: null,
+          aspectRatio,
+          comments: [],
+        },
+      ];
+    });
+  }, []);
+
+  const handlePromptChange = useCallback(
+    (sceneIndex: number, prompt: string) => {
+      // WHY: Editing the prompt drops the panel back to "ready" state if it was
+      // approved — the image no longer matches the spec, so the user has to
+      // either regenerate or re-approve consciously.
+      setScenes((current) =>
+        current.map((s) =>
+          s.sceneIndex === sceneIndex
+            ? {
+                ...s,
+                prompt,
+                status:
+                  s.status === "approved" || s.status === "ready"
+                    ? "ready"
+                    : s.status,
+              }
+            : s,
+        ),
+      );
+    },
+    [],
+  );
+
+  const handleAddComment = useCallback(
+    (sceneIndex: number, text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      const comment = {
+        id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        text: trimmed,
+        role: "user" as const,
+        createdAt: new Date().toISOString(),
+      };
+      setScenes((current) =>
+        current.map((s) =>
+          s.sceneIndex === sceneIndex
+            ? { ...s, comments: [...(s.comments ?? []), comment] }
+            : s,
+        ),
+      );
+    },
+    [],
+  );
+
+  const handleAnnotationsChange = useCallback(
+    (sceneIndex: number, annotations: StoryboardScene["annotations"]) => {
+      // WHY: Annotations don't affect approval status — they're directorial
+      // hints attached to the scene. Edits don't drop a panel from approved
+      // because the hints only matter on the next regen or downstream video
+      // gen.
+      setScenes((current) =>
+        current.map((s) =>
+          s.sceneIndex === sceneIndex ? { ...s, annotations } : s,
+        ),
+      );
+    },
+    [],
+  );
+
+  const handleGenerateSheet = useCallback(async () => {
+    // WHY: Snapshot scenes via functional setScenes so the request carries the
+    // freshest prompts/annotations even if the user just edited inline.
+    let payloadScenes: Array<{
+      sceneIndex: number;
+      prompt: string;
+      annotations: StoryboardScene["annotations"];
+    }> = [];
+    setScenes((current) => {
+      payloadScenes = current
+        .filter((s) => s.prompt.trim().length > 0)
+        .map((s) => ({
+          sceneIndex: s.sceneIndex,
+          prompt: s.prompt.trim(),
+          annotations: s.annotations,
+        }));
+      return current;
+    });
+    if (payloadScenes.length < 2) {
+      setSheetError("Need at least 2 panels with prompts to generate a sheet");
+      setSheetStatus("failed");
+      return;
+    }
+    if (sheetInFlightRef.current) return;
+    sheetInFlightRef.current = true;
+    setSheetStatus("generating");
+    setSheetError(null);
+
+    try {
+      const result = await generateStoryboardSheet({
+        videoProjectId: projectId || undefined,
+        scenes: payloadScenes,
+        aspectRatio: "16:9",
+        style: sheetStyle,
+      });
+      setSheetImageUrl(result.imageUrl);
+      setSheetStatus("ready");
+    } catch (err) {
+      setSheetError(
+        err instanceof Error ? err.message : "Sheet generation failed",
+      );
+      setSheetStatus("failed");
+    } finally {
+      sheetInFlightRef.current = false;
+    }
+  }, [projectId, sheetStyle]);
+
+  const handleGenerateAll = useCallback(async () => {
+    // WHY: Bulk-fire all panels needing generation in one POST. Server runs
+    // them in parallel via Promise.all. Per-panel statuses arrive in the
+    // response and get merged into state.
+    type Pending = {
+      sceneIndex: number;
+      prompt: string;
+      aspectRatio: "16:9" | "9:16" | "1:1";
+      annotations: StoryboardScene["annotations"];
+    };
+    const pending: Pending[] = [];
+    setScenes((current) => {
+      current.forEach((s) => {
+        const needsGen =
+          (s.status === "pending" ||
+            s.status === "failed" ||
+            (s.status !== "generating" && !s.imageUrl)) &&
+          s.prompt.trim().length > 0 &&
+          !inFlightRef.current.has(s.sceneIndex);
+        if (needsGen) {
+          pending.push({
+            sceneIndex: s.sceneIndex,
+            prompt: s.prompt.trim(),
+            aspectRatio: s.aspectRatio ?? "16:9",
+            annotations: s.annotations,
+          });
+        }
+      });
+      const pendingIdx = new Set(pending.map((p) => p.sceneIndex));
+      return current.map((s) =>
+        pendingIdx.has(s.sceneIndex)
+          ? { ...s, status: "generating", error: undefined, imageUrl: null }
+          : s,
+      );
+    });
+    if (pending.length === 0 || !projectId) return;
+    pending.forEach((p) => inFlightRef.current.add(p.sceneIndex));
+
+    try {
+      const result = await generateStoryboard({
+        videoProjectId: projectId,
+        model,
+        scenes: pending,
+      });
+      const byIdx = new Map(result.scenes.map((r) => [r.sceneIndex, r]));
+      setScenes((current) =>
+        current.map((s) => {
+          const r = byIdx.get(s.sceneIndex);
+          if (!r) return s;
+          return {
+            ...s,
+            status: r.status === "ready" ? "ready" : "failed",
+            imageUrl: r.imageUrl,
+            error: r.error,
+          };
+        }),
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Generate-all failed";
+      const pendingIdx = new Set(pending.map((p) => p.sceneIndex));
+      setScenes((current) =>
+        current.map((s) =>
+          pendingIdx.has(s.sceneIndex)
+            ? { ...s, status: "failed", error: msg }
+            : s,
+        ),
+      );
+    } finally {
+      pending.forEach((p) => inFlightRef.current.delete(p.sceneIndex));
+    }
+  }, [model, projectId]);
 
   const handleAllApproved = useCallback(() => {
     // WHY: Hand the approved keyframes back to the chat-driven Workspace.
@@ -258,9 +513,10 @@ export default function StoryboardPage() {
             )}
           </div>
           <p className="text-sm text-ash max-w-2xl">
-            Cheap-keyframe approval gate. Approved frames flow back to the
-            strategist as <code className="text-cloud bg-slate px-1 rounded">firstFrameUrl</code> on
-            each scene before video generation runs.
+            Review, critique, and lock the visual direction before video
+            credits get spent. Edit prompts inline, drop notes on individual
+            panels, add or remove scenes, then ship the approved sheet to
+            generation.
           </p>
         </header>
 
@@ -292,6 +548,120 @@ export default function StoryboardPage() {
           </div>
         )}
 
+        {/* Cast hint — available @handles resolve to sheet refs at request time */}
+        {cast.length > 0 && (
+          <div className="mb-4 flex items-center gap-3 flex-wrap rounded-lg border border-smoke/50 bg-graphite/30 px-4 py-2.5">
+            <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-ash">
+              <Users size={12} strokeWidth={1.5} />
+              Cast available
+            </span>
+            {cast.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => {
+                  if (c.handle && navigator.clipboard) {
+                    void navigator.clipboard.writeText(`@${c.handle}`);
+                  }
+                }}
+                title={`Click to copy @${c.handle ?? ""}`}
+                className="
+                  flex items-center gap-1.5 rounded-full bg-void/60
+                  border border-smoke px-2 py-1 cursor-pointer
+                  hover:border-royal/50 hover:bg-graphite
+                  transition-colors duration-[var(--transition-micro)]
+                "
+              >
+                {c.sheetImageUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={c.sheetImageUrl}
+                    alt=""
+                    className="h-4 w-4 rounded-full object-cover"
+                  />
+                )}
+                <code className="text-[10px] text-royal">@{c.handle}</code>
+                <span className="text-[10px] text-ash">{c.label ?? ""}</span>
+              </button>
+            ))}
+            <a
+              href="/dashboard/cast"
+              className="
+                ml-auto text-[10px] text-ash hover:text-royal
+                transition-colors duration-[var(--transition-micro)]
+              "
+            >
+              Manage →
+            </a>
+          </div>
+        )}
+
+        {/* Composite sheet — single gpt-image-2 call drawing all panels */}
+        {scenes.length >= 2 && (
+          <section className="mb-6 rounded-xl border border-smoke bg-graphite/60 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-cloud">
+                  Composite sheet
+                </h3>
+                <span className="text-xs text-ash">
+                  {sheetStatus === "ready"
+                    ? "ready"
+                    : sheetStatus === "generating"
+                      ? "generating…"
+                      : sheetStatus === "failed"
+                        ? "failed"
+                        : "not yet generated"}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-lg border border-smoke overflow-hidden">
+                  {(["rough-pencil", "photoreal"] as const).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setSheetStyle(v)}
+                      className={`
+                        px-2 py-1 text-[10px] font-medium cursor-pointer
+                        transition-colors duration-[var(--transition-micro)]
+                        ${
+                          sheetStyle === v
+                            ? "bg-royal text-white"
+                            : "bg-graphite/40 text-ash hover:text-cloud"
+                        }
+                      `}
+                      aria-label={`Sheet style: ${v}`}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="aspect-video w-full overflow-hidden rounded-lg bg-void border border-smoke flex items-center justify-center">
+              {sheetStatus === "generating" ? (
+                <span className="text-xs text-ash">
+                  gpt-image-2 drawing the whole sheet… ~50s
+                </span>
+              ) : sheetStatus === "failed" ? (
+                <span className="text-xs text-red-400 px-4 text-center">
+                  {sheetError ?? "Sheet generation failed"}
+                </span>
+              ) : sheetImageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={sheetImageUrl}
+                  alt="Composite storyboard sheet"
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <span className="text-xs text-ash px-4 text-center">
+                  Click &quot;Generate sheet&quot; to draw all{" "}
+                  {scenes.length} panels in one image (one gpt-image-2 call)
+                </span>
+              )}
+            </div>
+          </section>
+        )}
+
         <StoryboardStrip
           scenes={scenes}
           videoProjectId={projectId}
@@ -300,37 +670,31 @@ export default function StoryboardPage() {
           onRegenerate={handleRegenerate}
           onRemove={handleRemove}
           onAllApproved={handleAllApproved}
+          onAddScene={handleAddScene}
+          onPromptChange={handlePromptChange}
+          onAddComment={handleAddComment}
+          onAnnotationsChange={handleAnnotationsChange}
+          onGenerateAll={handleGenerateAll}
+          onGenerateSheet={handleGenerateSheet}
           isGenerating={isGenerating}
         />
 
-        {/* Empty state — directs user back to chat */}
+        {/* Hint — chat is the primary path, but you can also seed panels manually */}
         {scenes.length === 0 && !isGenerating && (
-          <div className="mt-8 rounded-xl border border-smoke/50 bg-graphite/20 p-6">
-            <div className="flex items-start gap-3">
-              <MessageSquare size={18} className="text-royal mt-0.5 shrink-0" strokeWidth={1.5} />
-              <div className="text-sm text-ash">
-                <p className="text-cloud font-medium mb-2">
-                  Nothing pending
-                </p>
-                <p className="mb-3">
-                  This view is chat-driven. To get a storyboard, head back to
-                  the Workspace and brief the strategist on the video you want.
-                  When it&apos;s ready to plan visuals, it&apos;ll send you here
-                  with keyframes to approve.
-                </p>
-                <a
-                  href="/dashboard"
-                  className="
-                    inline-flex items-center gap-1.5 rounded-lg bg-royal px-3 py-1.5
-                    text-xs font-medium text-white hover:bg-royal/90
-                    transition-colors duration-[var(--transition-micro)]
-                  "
-                >
-                  <MessageSquare size={12} strokeWidth={2} />
-                  Back to Workspace
-                </a>
-              </div>
-            </div>
+          <div className="mt-4 flex items-start gap-3 rounded-lg border border-smoke/50 bg-graphite/20 px-4 py-3 text-xs text-ash">
+            <MessageSquare
+              size={14}
+              className="text-royal mt-0.5 shrink-0"
+              strokeWidth={1.5}
+            />
+            <p>
+              Click <span className="text-cloud">Add scene</span> above to seed
+              a panel, or{" "}
+              <a href="/dashboard" className="text-royal hover:underline">
+                brief the strategist in the Workspace
+              </a>{" "}
+              and they&apos;ll send a full sheet over for review.
+            </p>
           </div>
         )}
       </div>

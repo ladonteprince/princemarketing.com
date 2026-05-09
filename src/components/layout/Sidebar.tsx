@@ -17,6 +17,7 @@ import {
   LogOut,
   X,
   Sparkles,
+  Users,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -34,6 +35,7 @@ type NavItem = {
 const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { label: "Workspace", href: "/dashboard", icon: LayoutDashboard },
   { label: "Storyboard", href: "/dashboard/storyboard", icon: Sparkles },
+  { label: "Cast", href: "/dashboard/cast", icon: Users },
   { label: "Video Editor", href: "/dashboard/video/new", icon: Film },
   { label: "Assets", href: "/dashboard/assets", icon: FolderOpen },
   { label: "Calendar", href: "/dashboard/calendar", icon: Calendar },

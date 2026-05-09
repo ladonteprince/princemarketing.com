@@ -49,6 +49,13 @@ enum AssetKind {
   AUDIO_TRACK
   POEM_TEXT
   CAPTION_TEXT
+  // WHY: Production cast / props / environments — recurring references the
+  // user can pull into any storyboard via @handle. Each row stores the
+  // canonical multi-angle sheet (gcsUri/publicUrl) and source photos in
+  // metadata.sourcePhotoUrls.
+  CHARACTER_SHEET
+  PROP_SHEET
+  ENVIRONMENT_SHEET
 }
 
 enum Placement {
@@ -278,27 +285,37 @@ model Analytics {
 }
 
 model Asset {
-  id          String    @id @default(cuid())
-  userId      String
-  kind        AssetKind
-  projectId   String?
-  episode     Int?
-  title       String?
-  archetype   String?
-  mode        String?
-  gcsUri      String
-  publicUrl   String?
-  durationSec Int?
-  width       Int?
-  height      Int?
-  bpm         Float?
-  trackId     String?
-  poemText    String?
-  metadata    Json      @default("{}")
-  pineconeIds String[]
-  embeddedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  userId           String
+  kind             AssetKind
+  projectId        String?
+  episode          Int?
+  title            String?
+  archetype        String?
+  mode             String?
+  gcsUri           String
+  publicUrl        String?
+  durationSec      Int?
+  width            Int?
+  height           Int?
+  bpm              Float?
+  trackId          String?
+  poemText         String?
+  metadata         Json      @default("{}")
+  // WHY: Slug used in storyboard prompts as @handle (e.g. @ladonte,
+  // @navy-suit, @penthouse-hall). Backend resolves @handle to the asset's
+  // sheet URL + canonical description at prompt-build time. Per-user unique
+  // so two users can independently own @main_character without collision.
+  handle           String?
+  // WHY: Per-asset director defaults — IPA hints (vocal phonetic flavor),
+  // FACS preferences (default expression bias), material/scale notes for
+  // props, mood/lighting defaults for environments. Auto-injected when the
+  // asset is referenced. Schema is open Json so we can iterate freely.
+  directorDefaults Json      @default("{}")
+  pineconeIds      String[]
+  embeddedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   track           Track?          @relation(fields: [trackId], references: [id], onDelete: SetNull)
@@ -306,6 +323,7 @@ model Asset {
   calendarEntries CalendarEntry[]
   ideas           Idea[]
 
+  @@unique([userId, handle])
   @@index([userId, kind])
   @@index([projectId])
   @@map("assets")

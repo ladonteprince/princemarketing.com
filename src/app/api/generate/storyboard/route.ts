@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limiter";
+import { resolveCast } from "@/lib/cast-resolver";
 import { z } from "zod";
 
 // WHY: Storyboard-first production. Before burning expensive Seedance video credits
@@ -12,6 +13,20 @@ import { z } from "zod";
 const API_BASE = process.env.PRINCE_API_URL || "https://princemarketing.ai";
 const API_KEY = process.env.PRINCE_API_KEY || "";
 
+const annotationsSchema = z
+  .object({
+    body: z.string().max(400).optional(),
+    camera: z.string().max(400).optional(),
+    framing: z.string().max(400).optional(),
+    lighting: z.string().max(400).optional(),
+    vocal: z.string().max(400).optional(),
+    ipa: z.string().max(400).optional(),
+    facs: z.string().max(400).optional(),
+  })
+  .optional();
+
+type Annotations = z.infer<typeof annotationsSchema>;
+
 const sceneSchema = z.object({
   sceneIndex: z.number().int().min(0).max(50),
   prompt: z.string().min(5).max(2000),
@@ -19,6 +34,10 @@ const sceneSchema = z.object({
   // WHY: Optional refs let the storyboard inherit character/prop/environment locks
   // already established for the project. Keeps episodes visually consistent.
   referenceImages: z.array(z.string().url()).max(10).optional(),
+  // WHY: Structured annotation channels (body/camera/framing/lighting/vocal/
+  // facs/ipa) get appended to the keyframe prompt as labeled clauses so each
+  // axis is honored separately. IPA/FACS pass through to downstream video gen.
+  annotations: annotationsSchema,
 });
 
 const requestSchema = z.object({
@@ -51,13 +70,24 @@ type StoryboardSceneResult = {
 function buildKeyframePrompt(
   scenePrompt: string,
   aspectRatio: string = "16:9",
+  annotations?: Annotations,
 ): string {
-  return (
-    `Single cinematic storyboard keyframe, ${aspectRatio} aspect ratio. ` +
-    `Composition for video production. No text overlay, no captions, no UI elements, no letterboxing. ` +
-    `Photorealistic, sharp focus, studio-grade color grading. ` +
-    `Scene: ${scenePrompt}`
-  );
+  const parts = [
+    `Single cinematic storyboard keyframe, ${aspectRatio} aspect ratio.`,
+    "Composition for video production. No text overlay, no captions, no UI elements, no letterboxing.",
+    "Photorealistic, sharp focus, studio-grade color grading.",
+    `Scene: ${scenePrompt}`,
+  ];
+  if (annotations?.body) parts.push(`Body movement: ${annotations.body}.`);
+  if (annotations?.camera) parts.push(`Camera: ${annotations.camera}.`);
+  if (annotations?.framing) parts.push(`Framing: ${annotations.framing}.`);
+  if (annotations?.lighting) parts.push(`Lighting: ${annotations.lighting}.`);
+  if (annotations?.vocal)
+    parts.push(`Vocal / emotional register: ${annotations.vocal}.`);
+  if (annotations?.facs)
+    parts.push(`Facial expression (FACS): ${annotations.facs}.`);
+  // IPA is a video-gen hint, not a still-image input — skipped here.
+  return parts.join(" ");
 }
 
 // WHY: OpenAI Images API only accepts a fixed set of sizes — map our aspect
@@ -79,7 +109,7 @@ async function generateViaOpenAI(
   scene: z.infer<typeof sceneSchema>,
 ): Promise<StoryboardSceneResult> {
   const aspect = scene.aspectRatio ?? "16:9";
-  const prompt = buildKeyframePrompt(scene.prompt, aspect);
+  const prompt = buildKeyframePrompt(scene.prompt, aspect, scene.annotations);
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
@@ -128,25 +158,18 @@ async function generateViaOpenAI(
       };
     }
 
-    // WHY: OpenAI returns base64 by default; some responses include a `url`
-    // field, others a `b64_json`. Surface url first; for b64 we'd need GCS
-    // upload to make it durable — punted to a later iteration.
+    // WHY: OpenAI returns b64_json by default for gpt-image-1. Inline as a
+    // data URL so the storyboard sheet renders immediately. TODO: when this
+    // becomes the default storyboard model, pipe the b64 through GCS so the
+    // approved firstFrameUrl handed off to downstream Seedance i2v has a
+    // durable HTTPS URL — data URLs ~2-3MB blow past localStorage's 5-10MB
+    // cap on multi-scene boards.
     const data = result?.data?.[0] as
       | { url?: string; b64_json?: string }
       | undefined;
-    const imageUrl = data?.url ?? null;
-
-    if (!imageUrl && data?.b64_json) {
-      return {
-        sceneIndex: scene.sceneIndex,
-        status: "failed",
-        imageUrl: null,
-        generationId: null,
-        streamUrl: null,
-        error:
-          "OpenAI returned base64 — durable URL upload not yet wired (TODO: pipe through GCS).",
-      };
-    }
+    const imageUrl =
+      data?.url ??
+      (data?.b64_json ? `data:image/png;base64,${data.b64_json}` : null);
 
     return {
       sceneIndex: scene.sceneIndex,
@@ -154,6 +177,7 @@ async function generateViaOpenAI(
       imageUrl,
       generationId: null,
       streamUrl: null,
+      error: imageUrl ? undefined : "OpenAI returned no image data",
     };
   } catch (err) {
     return {
@@ -172,7 +196,7 @@ async function generateViaPrinceAi(
   model: "nano-banana-pro",
 ): Promise<StoryboardSceneResult> {
   const aspect = scene.aspectRatio ?? "16:9";
-  const prompt = buildKeyframePrompt(scene.prompt, aspect);
+  const prompt = buildKeyframePrompt(scene.prompt, aspect, scene.annotations);
 
   try {
     const res = await fetch(`${API_BASE}/api/v1/generate/image`, {
@@ -271,7 +295,7 @@ async function generateViaGeminiDirect(
   }
 
   const aspect = scene.aspectRatio ?? "16:9";
-  const prompt = buildKeyframePrompt(scene.prompt, aspect);
+  const prompt = buildKeyframePrompt(scene.prompt, aspect, scene.annotations);
 
   // WHY: Fetch each ref URL → base64. Capped at scene.referenceImages.max(10)
   // by the schema. Failures on individual refs are non-fatal — we keep going
@@ -419,8 +443,31 @@ export async function POST(request: Request) {
       effectiveModel = "nano-banana-pro";
     }
 
+    // WHY: Resolve @handle references in each scene's prompt against the user's
+    // cast library. The asset's sheet URL gets appended to referenceImages and
+    // the canonical label is substituted into the prompt body so both the
+    // visual lock and prose context flow downstream. Per-scene so different
+    // panels can reference different cast members.
+    const userId = session.user.id;
+    const scenesResolved = userId
+      ? await Promise.all(
+          parsed.data.scenes.map(async (scene) => {
+            const resolved = await resolveCast({
+              userId,
+              prompt: scene.prompt,
+              existingReferenceImages: scene.referenceImages ?? [],
+            });
+            return {
+              ...scene,
+              prompt: resolved.prompt,
+              referenceImages: resolved.referenceImages,
+            };
+          }),
+        )
+      : parsed.data.scenes;
+
     const results = await Promise.all(
-      parsed.data.scenes.map((scene) =>
+      scenesResolved.map((scene) =>
         generateOneKeyframe(scene, effectiveModel),
       ),
     );
