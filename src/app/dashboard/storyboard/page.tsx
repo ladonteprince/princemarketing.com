@@ -12,9 +12,10 @@ import {
   StoryboardStrip,
   generateStoryboard,
   generateStoryboardSheet,
+  editStoryboardSheetPanel,
   type StoryboardScene,
-  type StoryboardResponse,
 } from "@/components/dashboard/StoryboardStrip";
+import { cropSheetToPanels, buildPanelMask } from "@/lib/sheet-crop";
 
 // WHY: The Storyboard tab is purely a chat-driven destination — the user does
 // NOT navigate here manually. The Workspace strategist emits a
@@ -80,72 +81,20 @@ export default function StoryboardPage() {
   // can't double-charge the OpenAI / .ai pipeline. Survives re-renders.
   const inFlightRef = useRef<Set<number>>(new Set());
   const sheetInFlightRef = useRef(false);
-
-  // ─── Pipeline ──────────────────────────────────────────────────────
-
-  const fireGenerate = useCallback(
-    async (payload: PendingStoryboard, replaceState: boolean) => {
-      setError(null);
-      setIsGenerating(true);
-      setProjectId(payload.videoProjectId);
-      setModel(payload.model);
-
-      // Seed local state so the strip renders skeletons while the API runs
-      const seeded: StoryboardScene[] = payload.scenes.map((s) => ({
-        sceneIndex: s.sceneIndex,
-        prompt: s.prompt,
-        status: "generating",
-        imageUrl: null,
-        aspectRatio: s.aspectRatio ?? "16:9",
-      }));
-      if (replaceState) setScenes(seeded);
-
-      try {
-        const result: StoryboardResponse = await generateStoryboard({
-          videoProjectId: payload.videoProjectId,
-          model: payload.model,
-          scenes: payload.scenes.map((s) => ({
-            sceneIndex: s.sceneIndex,
-            prompt: s.prompt,
-            aspectRatio: s.aspectRatio ?? "16:9",
-            referenceImages: s.referenceImages,
-          })),
-        });
-
-        setScenes((current) =>
-          current.map((s) => {
-            const r = result.scenes.find((x) => x.sceneIndex === s.sceneIndex);
-            if (!r) return s;
-            return {
-              ...s,
-              status:
-                r.status === "ready"
-                  ? "ready"
-                  : r.status === "failed"
-                    ? "failed"
-                    : "generating",
-              imageUrl: r.imageUrl,
-              error: r.error,
-            };
-          }),
-        );
-
-        if (result.modelRequested !== result.model) {
-          setError(
-            `Requested ${result.modelRequested} but server fell back to ${result.model} — verify OPENAI_API_KEY on the server.`,
-          );
-        }
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Storyboard generation failed");
-        setScenes((current) =>
-          current.map((s) => ({ ...s, status: "failed", error: "Request failed" })),
-        );
-      } finally {
-        setIsGenerating(false);
-      }
-    },
-    [],
-  );
+  // WHY: Mirror of scenes that handlers can read synchronously. setScenes
+  // updaters are async; trying to peek at state via a no-op functional
+  // update is unreliable across React 19 strict-mode dev double-renders.
+  const scenesRef = useRef<StoryboardScene[]>([]);
+  useEffect(() => {
+    scenesRef.current = scenes;
+  }, [scenes]);
+  // WHY: Same pattern for sheetImageUrl — handleRegenerate (useCallback with
+  // [model, projectId] deps) won't re-create when sheetImageUrl changes,
+  // so a ref mirror is the cleanest sync read path.
+  const sheetImageUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    sheetImageUrlRef.current = sheetImageUrl;
+  }, [sheetImageUrl]);
 
   // ─── Cast hint bar — fetch once on mount ────────────────────────────
 
@@ -176,12 +125,36 @@ export default function StoryboardPage() {
       // WHY: Clear the pending payload immediately so a refresh doesn't refire.
       // The local React state holds the live results from here on.
       localStorage.removeItem(PENDING_KEY);
-      void fireGenerate(payload, true);
+
+      // WHY: Sheet-first auto-fire. ONE gpt-image-2 call for the whole grid
+      // (cheap, stylistically unified), then deterministic crop assigns each
+      // cell to the matching scene's imageUrl. Per-panel Redo stays available
+      // for refining weak cells at full resolution. This replaces the old
+      // per-panel auto-fire which burned N×$0.04 up front and got drift
+      // between panels.
+      setProjectId(payload.videoProjectId);
+      setModel(payload.model);
+      const seeded: StoryboardScene[] = payload.scenes.map((s) => ({
+        sceneIndex: s.sceneIndex,
+        prompt: s.prompt,
+        status: "pending",
+        imageUrl: null,
+        aspectRatio: s.aspectRatio ?? "16:9",
+      }));
+      setScenes(seeded);
+      // WHY: Pass seeded scenes + projectId directly so we don't depend on
+      // React having committed state or the scenesRef having synced yet.
+      void handleGenerateSheet(payload.videoProjectId, seeded);
     } catch (e) {
       console.warn("[Storyboard] Failed to parse pending payload:", e);
       localStorage.removeItem(PENDING_KEY);
     }
-  }, [fireGenerate]);
+    // WHY: handleGenerateSheet is intentionally not in the dep array — its
+    // identity changes when projectId/sheetStyle change, but this effect
+    // should only fire ONCE on mount (guarded by hasMountedRef). React lint
+    // expects deps; the guard above makes it safe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── Per-scene handlers ─────────────────────────────────────────────
 
@@ -205,28 +178,72 @@ export default function StoryboardPage() {
     async (sceneIndex: number) => {
       if (inFlightRef.current.has(sceneIndex)) return;
 
-      // WHY: Read current scene + projectId via functional setScenes so a stale
-      // closure (Fast Refresh, double-render) can't capture old data. The
-      // outer projectId is still needed to gate the request.
-      let prompt = "";
-      let aspectRatio: "16:9" | "9:16" | "1:1" = "16:9";
-      let annotations: StoryboardScene["annotations"];
-      setScenes((current) => {
-        const scene = current.find((s) => s.sceneIndex === sceneIndex);
-        if (!scene) return current;
-        prompt = scene.prompt;
-        aspectRatio = scene.aspectRatio ?? "16:9";
-        annotations = scene.annotations;
-        return current.map((s) =>
+      // WHY: Read latest scene synchronously via the ref mirror so we don't
+      // need a setScenes-callback peek (unreliable under React 19 strict-mode
+      // dev double-render).
+      const scene = scenesRef.current.find((s) => s.sceneIndex === sceneIndex);
+      if (!scene) return;
+      const prompt = scene.prompt;
+      const aspectRatio = scene.aspectRatio ?? "16:9";
+      const annotations = scene.annotations;
+      if (!prompt) return;
+
+      const sheetUrl = sheetImageUrlRef.current;
+      const panelCount = scenesRef.current.filter(
+        (s) => s.prompt.trim().length > 0,
+      ).length;
+
+      // Optimistic UI: flip to "generating" immediately
+      setScenes((current) =>
+        current.map((s) =>
           s.sceneIndex === sceneIndex
             ? { ...s, status: "generating", error: undefined, imageUrl: null }
             : s,
-        );
-      });
-      if (!prompt || !projectId) return;
+        ),
+      );
       inFlightRef.current.add(sceneIndex);
 
       try {
+        // WHY: Sheet exists → re-roll only this panel via OpenAI image-edit
+        // with a transparent-target-cell mask. Result is the same sheet with
+        // just this cell changed. Re-crop to update per-panel imageUrls.
+        if (sheetUrl) {
+          const maskUrl = await buildPanelMask(sheetUrl, panelCount, sceneIndex);
+          const editResult = await editStoryboardSheetPanel({
+            sheetImageDataUrl: sheetUrl,
+            maskDataUrl: maskUrl,
+            panelIndex: sceneIndex,
+            panelPrompt: prompt,
+            annotations,
+          });
+          setSheetImageUrl(editResult.imageUrl);
+          // Re-crop the new sheet for per-panel views
+          const crops = await cropSheetToPanels(editResult.imageUrl, panelCount);
+          setScenes((current) => {
+            // Preserve prompt/scene order; map crops by working-panel index
+            const workingScenes = current.filter(
+              (s) => s.prompt.trim().length > 0,
+            );
+            const cropByIdx = new Map<number, string>();
+            workingScenes.forEach((s, i) => {
+              cropByIdx.set(s.sceneIndex, crops[i] ?? "");
+            });
+            return current.map((s) => {
+              const cropUrl = cropByIdx.get(s.sceneIndex);
+              if (!cropUrl) return s;
+              if (s.status === "approved" && s.sceneIndex !== sceneIndex) {
+                // Don't downgrade other approved panels — keep their prior crops.
+                return s;
+              }
+              return { ...s, status: "ready", imageUrl: cropUrl, error: undefined };
+            });
+          });
+          return;
+        }
+
+        // No sheet yet → fall back to per-panel generation (full resolution,
+        // separate gpt-image-2 call). Old behavior preserved.
+        if (!projectId) return;
         const result = await generateStoryboard({
           videoProjectId: projectId,
           model,
@@ -351,24 +368,22 @@ export default function StoryboardPage() {
     [],
   );
 
-  const handleGenerateSheet = useCallback(async () => {
-    // WHY: Snapshot scenes via functional setScenes so the request carries the
-    // freshest prompts/annotations even if the user just edited inline.
-    let payloadScenes: Array<{
-      sceneIndex: number;
-      prompt: string;
-      annotations: StoryboardScene["annotations"];
-    }> = [];
-    setScenes((current) => {
-      payloadScenes = current
-        .filter((s) => s.prompt.trim().length > 0)
-        .map((s) => ({
-          sceneIndex: s.sceneIndex,
-          prompt: s.prompt.trim(),
-          annotations: s.annotations,
-        }));
-      return current;
-    });
+  const handleGenerateSheet = useCallback(async (
+    projectIdOverride?: string,
+    scenesOverride?: StoryboardScene[],
+  ) => {
+    // WHY: Read latest scenes via the synchronous ref mirror — setScenes
+    // updaters are async and unreliable for read-only snapshots. Auto-fire
+    // path passes scenesOverride to dodge the ref-not-yet-synced race on
+    // first mount.
+    const sourceScenes = scenesOverride ?? scenesRef.current;
+    const payloadScenes = sourceScenes
+      .filter((s) => s.prompt.trim().length > 0)
+      .map((s) => ({
+        sceneIndex: s.sceneIndex,
+        prompt: s.prompt.trim(),
+        annotations: s.annotations,
+      }));
     if (payloadScenes.length < 2) {
       setSheetError("Need at least 2 panels with prompts to generate a sheet");
       setSheetStatus("failed");
@@ -381,13 +396,46 @@ export default function StoryboardPage() {
 
     try {
       const result = await generateStoryboardSheet({
-        videoProjectId: projectId || undefined,
+        videoProjectId: projectIdOverride || projectId || undefined,
         scenes: payloadScenes,
         aspectRatio: "16:9",
         style: sheetStyle,
       });
       setSheetImageUrl(result.imageUrl);
       setSheetStatus("ready");
+
+      // WHY: Auto-crop the sheet into per-panel data URLs and assign to each
+      // scene's imageUrl. Each panel becomes "ready" with its slice of the
+      // composite — no extra OpenAI calls. Approved frames flow through to
+      // downstream video gen as firstFrameUrl. Per-panel Redo regenerates a
+      // single panel at full resolution if a crop looks weak.
+      try {
+        const crops = await cropSheetToPanels(
+          result.imageUrl,
+          payloadScenes.length,
+        );
+        const cropByIdx = new Map(
+          payloadScenes.map((p, i) => [p.sceneIndex, crops[i]]),
+        );
+        setScenes((current) =>
+          current.map((s) => {
+            const cropUrl = cropByIdx.get(s.sceneIndex);
+            if (!cropUrl) return s;
+            // WHY: Don't downgrade an already-approved panel — user may have
+            // approved a hand-Redone full-res frame they want to keep.
+            if (s.status === "approved") return s;
+            return {
+              ...s,
+              status: "ready",
+              imageUrl: cropUrl,
+              error: undefined,
+            };
+          }),
+        );
+      } catch (cropErr) {
+        console.warn("[storyboard] crop failed:", cropErr);
+        // Non-fatal — sheet still rendered for review even if cropping failed.
+      }
     } catch (err) {
       setSheetError(
         err instanceof Error ? err.message : "Sheet generation failed",

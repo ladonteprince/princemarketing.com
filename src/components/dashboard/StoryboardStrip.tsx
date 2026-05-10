@@ -783,3 +783,37 @@ export async function generateStoryboardSheet(
 
   return res.json();
 }
+
+/* ─── Helper: edit one panel in an existing sheet ─────────────────────── */
+
+export type StoryboardSheetEditRequest = {
+  sheetImageDataUrl: string;
+  maskDataUrl: string;
+  panelIndex: number;
+  panelPrompt: string;
+  annotations?: SceneAnnotations;
+};
+
+export type StoryboardSheetEditResponse = {
+  model: string;
+  panelIndex: number;
+  imageUrl: string;
+  promptUsed: string;
+};
+
+export async function editStoryboardSheetPanel(
+  req: StoryboardSheetEditRequest,
+): Promise<StoryboardSheetEditResponse> {
+  const res = await fetch("/api/generate/storyboard-sheet-edit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? `Sheet edit failed (${res.status})`);
+  }
+
+  return res.json();
+}
