@@ -1630,6 +1630,37 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
       let mostRecentVideoId: string | null = null;
       const PLACEHOLDER_IDS = new Set(["auto", "current", "latest"]);
 
+      // WHY: Fall back to the on-canvas active video project when the AI
+      // forgets to emit CREATE_VIDEO in the same response. Common case:
+      // user approves a storyboard → strategist emits TAG_REFERENCE_TO_SCENE
+      // for cast handles but assumes the video project already exists from
+      // a prior turn. Without this fallback, every tag fails with "auto was
+      // not created in this response."
+      let canvasActiveVideoId: string | null = null;
+      try {
+        const saved =
+          typeof window !== "undefined"
+            ? localStorage.getItem("pm-video-projects")
+            : null;
+        if (saved) {
+          const all = JSON.parse(saved) as Array<{
+            id: string;
+            createdAt?: string;
+            updatedAt?: string;
+          }>;
+          if (Array.isArray(all) && all.length > 0) {
+            const latest = [...all].sort((a, b) => {
+              const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
+              const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
+              return tb - ta;
+            })[0];
+            if (latest?.id) canvasActiveVideoId = latest.id;
+          }
+        }
+      } catch {
+        /* ignore corrupt state */
+      }
+
       for (let i = 0; i < preprocessed.length; i++) {
         const a = preprocessed[i];
         if (a.action === "CREATE_VIDEO") {
@@ -1640,10 +1671,15 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
           mostRecentVideoId = String(a.videoProjectId);
         } else if (
           a.videoProjectId &&
-          PLACEHOLDER_IDS.has(String(a.videoProjectId)) &&
-          mostRecentVideoId
+          PLACEHOLDER_IDS.has(String(a.videoProjectId))
         ) {
-          a.videoProjectId = mostRecentVideoId;
+          // Prefer this batch's CREATE_VIDEO; fall back to canvas-active
+          // project so tags against existing projects don't fail.
+          if (mostRecentVideoId) {
+            a.videoProjectId = mostRecentVideoId;
+          } else if (canvasActiveVideoId) {
+            a.videoProjectId = canvasActiveVideoId;
+          }
         }
       }
 
@@ -1667,6 +1703,32 @@ export function ChatPanel({ collapsed, onToggle, onCanvasAction, nodes }: ChatPa
         }
         if (a.action === "ADD_REFERENCE_IMAGE" && a.label) {
           batchContext.referenceLabels.add(String(a.label));
+        }
+      }
+      // WHY: Treat the canvas-active video project as a valid TAG target
+      // even without a CREATE_VIDEO in this batch. Read its scene count
+      // from localStorage so the validator's range check still works.
+      if (canvasActiveVideoId && !batchContext.createVideoSceneCounts.has(canvasActiveVideoId)) {
+        try {
+          const saved =
+            typeof window !== "undefined"
+              ? localStorage.getItem("pm-video-projects")
+              : null;
+          if (saved) {
+            const all = JSON.parse(saved) as Array<{
+              id: string;
+              scenes?: Array<unknown>;
+            }>;
+            const project = all.find((p) => p.id === canvasActiveVideoId);
+            if (project && Array.isArray(project.scenes)) {
+              batchContext.createVideoSceneCounts.set(
+                canvasActiveVideoId,
+                project.scenes.length,
+              );
+            }
+          }
+        } catch {
+          /* ignore */
         }
       }
       // Also accept already-attached project references as valid tag targets
